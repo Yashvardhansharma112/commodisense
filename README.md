@@ -1,8 +1,8 @@
 ---
 title: CommodiSense
 emoji: chart_with_upwards_trend
-colorFrom: slate
-colorTo: slate
+colorFrom: gray
+colorTo: gray
 sdk: docker
 app_file: dashboard/app.py
 pinned: false
