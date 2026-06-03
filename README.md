@@ -1,6 +1,5 @@
 ---
 title: CommodiSense
-emoji: chart_with_upwards_trend
 colorFrom: gray
 colorTo: gray
 sdk: docker
