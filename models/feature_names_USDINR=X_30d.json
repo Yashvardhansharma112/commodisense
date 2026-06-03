@@ -1,1 +1,1 @@
-["atr_pct", "high_volatility_flag", "month_cos", "atr_14", "month_sin", "return_60d", "return_30d", "sma_20_50_cross", "rsi_14", "momentum_score", "return_7d", "return_14d", "macd_signal", "return_1d", "day_of_week"]
+["fred_fedfunds", "fred_yield_inv", "fred_indpro", "fred_treasury_10y", "fred_vix_high", "atr_pct", "month_sin", "atr_14", "month_cos", "return_60d", "return_30d", "fred_vix", "rsi_14", "fred_dxy", "high_volatility_flag", "fred_dxy_chg_4w", "sma_20_50_cross", "macd_signal", "return_7d", "return_14d"]

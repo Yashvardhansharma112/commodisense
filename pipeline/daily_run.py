@@ -187,21 +187,29 @@ def run(backfill: bool = False, only_step: int | None = None) -> dict:
     from data.collector_news          import run as run_news
     from data.collector_weather       import run as run_weather
     from data.collector_geopolitical  import run as run_geo
+    from data.collector_cot           import run as run_cot
+    from data.collector_fred          import run as run_fred
+    from data.collector_eia           import run as run_eia
+    from data.collector_usda          import run as run_usda
     from signals.nlp_sentiment        import process_batch as run_sentiment
     from signals.nlp_events           import process_batch as run_events
     from model.predictor              import predict_all
     from model.explainer              import generate_all_reports
 
     steps = [
-        (1, "Collect prices",       run_prices,          {"backfill": backfill}),
-        (2, "Collect news",         run_news,            {"backfill": backfill}),
-        (3, "Collect weather",      run_weather,         {"backfill": backfill}),
-        (4, "Collect geopolitical", run_geo,             {"backfill": backfill}),
-        (5, "Score sentiment",      run_sentiment,       {"limit": 500}),
-        (6, "Extract events",       run_events,          {"limit": 500}),
-        (7, "Generate forecasts",   predict_all,         {}),
-        (8, "Generate reports",     generate_all_reports,{}),
-        (9, "Log accuracy",         _log_accuracy,       {}),
+        (1,  "Collect prices",       run_prices,          {"backfill": backfill}),
+        (2,  "Collect news",         run_news,            {"backfill": backfill}),
+        (3,  "Collect weather",      run_weather,         {"backfill": backfill}),
+        (4,  "Collect geopolitical", run_geo,             {"backfill": backfill}),
+        (5,  "Collect COT",          run_cot,             {"backfill": backfill}),
+        (6,  "Collect FRED macro",   run_fred,            {"backfill": backfill}),
+        (7,  "Collect EIA inventory",run_eia,             {"backfill": backfill}),
+        (8,  "Collect USDA crop",    run_usda,            {"backfill": backfill}),
+        (9,  "Score sentiment",      run_sentiment,       {"limit": 500}),
+        (10, "Extract events",       run_events,          {"limit": 500}),
+        (11, "Generate forecasts",   predict_all,         {}),
+        (12, "Generate reports",     generate_all_reports,{}),
+        (13, "Log accuracy",         _log_accuracy,       {}),
     ]
 
     for step_num, step_name, fn, kwargs in steps:
@@ -248,5 +256,6 @@ if __name__ == "__main__":
     parser.add_argument("--step",      type=int, default=None, help="Run only step N (1–9)")
     args = parser.parse_args()
     result = run(backfill=args.backfill, only_step=args.step)
+    n_steps = len(steps)
     print(f"\nPipeline {'OK' if result['steps_failed'] == 0 else 'PARTIAL'}: "
-          f"{result['steps_ok']}/9 steps succeeded in {result['total_elapsed']}s")
+          f"{result['steps_ok']}/{n_steps} steps succeeded in {result['total_elapsed']}s")

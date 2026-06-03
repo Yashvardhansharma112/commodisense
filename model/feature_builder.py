@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.db import get_conn
 from signals.price_features import build_feature_matrix, ALL_SYMBOLS
 from signals.weather_features import get_weather_dataframe
+from signals.macro_features import build_macro_dataframe, get_macro_features
 
 log = logging.getLogger(__name__)
 
@@ -230,6 +231,10 @@ def build_training_data(
     if not weather.empty:
         weather["date"] = pd.to_datetime(weather["date"]).dt.date
 
+    macro = build_macro_dataframe(symbol, start_date, end_date)
+    if not macro.empty:
+        macro["date"] = pd.to_datetime(macro["date"]).dt.date
+
     # Merge everything onto price_feat (left join → zero-fill missing signal days)
     df = price_feat.copy()
     df = _safe_merge(df, targets,   on="date")
@@ -240,6 +245,7 @@ def build_training_data(
     df = _safe_merge(df, events,  on="date")
     df = _safe_merge(df, geo,     on="date")
     df = _safe_merge(df, weather, on="date")
+    df = _safe_merge(df, macro,   on="date")
 
     # Add binary indicator: 1 on days where we have real news signal, 0 elsewhere.
     # This lets the model learn "trust sentiment when has_news_signal=1" rather than
@@ -344,6 +350,8 @@ def build_prediction_features(symbol: str, as_of_date: str = None) -> pd.Series:
     # Weather
     weather_f = get_weather_features(symbol, days=90)
 
+    macro_f = get_macro_features(symbol, target_date)
+
     features = {
         **price_f,
         "sentiment_score_1d":  sentiment_1d,
@@ -360,6 +368,7 @@ def build_prediction_features(symbol: str, as_of_date: str = None) -> pd.Series:
         "risk_score_7d":       risk_score_7d,
         "risk_score_30d":      risk_score_30d,
         **weather_f,
+        **macro_f,
     }
 
     return pd.Series(features)

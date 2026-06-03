@@ -109,6 +109,56 @@ def init_schema() -> None:
         )
     """)
 
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cot_data (
+            date                 DATE    NOT NULL,
+            symbol               TEXT    NOT NULL,
+            commercial_net_long  DOUBLE,
+            commercial_net_pct   DOUBLE,
+            mm_net_long          DOUBLE,
+            mm_net_pct           DOUBLE,
+            commercial_chg_1w    DOUBLE,
+            mm_chg_1w            DOUBLE,
+            open_interest        DOUBLE,
+            PRIMARY KEY (date, symbol)
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS fred_data (
+            date              DATE    NOT NULL PRIMARY KEY,
+            dxy               DOUBLE,
+            inflation_exp     DOUBLE,
+            vix               DOUBLE,
+            treasury_10y      DOUBLE,
+            financial_stress  DOUBLE,
+            indpro            DOUBLE,
+            fedfunds          DOUBLE
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS eia_inventory (
+            date        DATE    NOT NULL,
+            series      TEXT    NOT NULL,
+            value       DOUBLE,
+            chg_1w      DOUBLE,
+            vs_5yr_avg  DOUBLE,
+            PRIMARY KEY (date, series)
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS usda_crop (
+            date         DATE    NOT NULL,
+            commodity    TEXT    NOT NULL,
+            metric       TEXT    NOT NULL,
+            value        DOUBLE,
+            yoy_chg_pct  DOUBLE,
+            PRIMARY KEY (date, commodity, metric)
+        )
+    """)
+
     conn.close()
 
 

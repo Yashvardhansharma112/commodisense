@@ -1,1 +1,1 @@
-["sma_20_50_cross", "days_to_opec_meeting", "month_sin", "high_volatility_flag", "month_cos", "return_60d", "atr_14", "atr_pct", "rsi_14", "return_30d", "return_14d", "return_7d", "momentum_score", "macd_signal", "return_1d", "day_of_week"]
+["sma_20_50_cross", "eia_crude_vs_5yr", "fred_treasury_10y", "fred_indpro", "fred_fedfunds", "cot_mm_net_pct", "month_sin", "eia_crude_stocks", "cot_mm_net", "days_to_opec_meeting", "cot_open_interest", "cot_commercial_net", "cot_commercial_net_pct", "month_cos", "return_60d", "rsi_14", "return_30d", "fred_dxy", "atr_pct", "fred_vix"]

@@ -1,1 +1,1 @@
-["month_cos", "month_sin", "return_60d", "return_30d", "atr_pct", "macd_signal", "atr_14", "sma_20_50_cross", "return_14d", "rsi_14", "return_7d", "momentum_score", "high_volatility_flag", "return_1d", "day_of_week"]
+["fred_treasury_10y", "fred_indpro", "cot_mm_net", "month_cos", "cot_mm_net_pct", "month_sin", "fred_fedfunds", "fred_dxy", "cot_commercial_net", "return_30d", "return_60d", "cot_commercial_net_pct", "fred_yield_inv", "cot_open_interest", "sma_20_50_cross", "atr_pct", "fred_vix_high", "atr_14", "macd_signal", "return_14d"]
