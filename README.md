@@ -1,3 +1,13 @@
+---
+title: CommodiSense
+emoji: 📈
+colorFrom: slate
+colorTo: slate
+sdk: docker
+app_file: dashboard/app.py
+pinned: false
+---
+
 # ◈ CommodiSense — Global Commodity Intelligence Engine
 
 <div align="center">
