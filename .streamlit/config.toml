@@ -1,0 +1,12 @@
+[theme]
+primaryColor = "#3D7FFF"
+backgroundColor = "#060A0F"
+secondaryBackgroundColor = "#0D1117"
+textColor = "#E6EDF3"
+
+[client]
+showErrorDetails = false
+
+[server]
+port = 7860
+headless = true
