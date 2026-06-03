@@ -1,6 +1,6 @@
-# Dashboard requirements — used by Streamlit Cloud
-# Pipeline-only heavy packages (torch, transformers, spacy, prophet)
-# are in requirements-pipeline.txt
+# Dashboard requirements — Streamlit Cloud
+# Python 3.12 pinned via runtime.txt (shap/numba/llvmlite don't support Python 3.14)
+# Heavy pipeline packages (torch, transformers, spacy) → requirements-pipeline.txt
 
 duckdb>=0.10.0
 pandas>=2.0.0
