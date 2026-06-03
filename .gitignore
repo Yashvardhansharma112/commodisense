@@ -53,9 +53,10 @@ model/cache/
 logs/
 runs/
 
-# Streamlit
-.streamlit/
+# Streamlit cache (keep config.toml for deployment)
 .streamlit_cache/
+.streamlit/.cache/
+.streamlit/__pycache__/
 
 # Jupyter
 .ipynb_checkpoints/
