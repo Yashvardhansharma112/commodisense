@@ -1,0 +1,12 @@
+# Full pipeline requirements — used by GitHub Actions for daily data collection,
+# NLP processing, and model training. NOT used by Streamlit Cloud dashboard.
+
+-r requirements.txt
+
+# Heavy NLP/ML — FinBERT sentiment scoring and event extraction
+torch>=2.0.0
+transformers>=4.30.0
+spacy>=3.5.0
+
+# Forecasting (used in trainer experiments, optional)
+prophet>=1.1.0
