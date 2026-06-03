@@ -1,22 +1,62 @@
 # Python
-venv/
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
 .Python
-*.egg-info/
-dist/
+env/
+venv/
+ENV/
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Secrets
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
 .env
+.env.local
+.env.*.local
 
-# Runtime artifacts
-*.sqlite
-data/logs/
-data/reports/
+# Data/Cache/Database (binary files)
+*.db
+*.duckdb
+data/cache/
+data/*.parquet
+data/*.csv.bak
+data/collector_cache/
+model/models/
+model/cache/
+.cache/
+*.pkl
+*.pickle
 
-# OS
-.DS_Store
-Thumbs.db
+# Logs
+*.log
+logs/
+runs/
+
+# Streamlit
+.streamlit/
+.streamlit_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
