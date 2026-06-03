@@ -1,12 +1,9 @@
 """
-CommodiSense Dashboard — Streamlit app serving commodity forecasts,
-signal breakdowns, AI reports, and recent news.
+CommodiSense Dashboard — Global Commodity Intelligence Engine
+Dark luxury financial terminal UI.
 
-Run locally:
-    streamlit run dashboard/app.py
-
-Deploy: Streamlit Cloud → connect GitHub repo → set main file: dashboard/app.py
-        Add secret GROQ_API_KEY in Streamlit Cloud settings.
+Run: streamlit run dashboard/app.py
+Deploy: Streamlit Cloud → main file: dashboard/app.py → secret: GROQ_API_KEY
 """
 
 import sys
@@ -17,7 +14,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# Make project root importable whether launched from repo root or dashboard/
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -25,500 +21,1056 @@ from data.db import get_conn, init_schema
 from model.explainer import load_latest_reports, generate_report
 from model.predictor import predict, SYMBOL_NAMES
 
-# ── page config (must be first Streamlit call) ─────────────────────────────────
+# ── page config ────────────────────────────────────────────────────────────────
 
 st.set_page_config(
     page_title="CommodiSense",
-    page_icon="📊",
+    page_icon="◈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
-# ── constants ──────────────────────────────────────────────────────────────────
+# ── design tokens ──────────────────────────────────────────────────────────────
 
-ALL_SYMBOLS  = list(SYMBOL_NAMES.keys())
-COLOR_UP     = "#00C896"
-COLOR_DOWN   = "#FF4B4B"
-COLOR_STABLE = "#888888"
-COLOR_BG     = "#0E1117"
+C = {
+    "bg":          "#060A0F",
+    "surface":     "#0D1117",
+    "surface2":    "#161B22",
+    "border":      "rgba(255,255,255,0.07)",
+    "border_hi":   "rgba(255,255,255,0.14)",
+    "up":          "#00D97E",
+    "down":        "#FF3B55",
+    "stable":      "#7A8899",
+    "up_dim":      "rgba(0,217,126,0.12)",
+    "down_dim":    "rgba(255,59,85,0.12)",
+    "stable_dim":  "rgba(122,136,153,0.10)",
+    "accent":      "#3D7FFF",
+    "accent_dim":  "rgba(61,127,255,0.12)",
+    "gold":        "#FFBB00",
+    "text":        "#E6EDF3",
+    "text2":       "#8B949E",
+    "text3":       "#484F58",
+    "conf_high":   "#00D97E",
+    "conf_mid":    "#FFBB00",
+    "conf_low":    "#7A8899",
+}
 
-DIRECTION_ARROW = {"UP": "↑", "DOWN": "↓", "STABLE": "→"}
-DIRECTION_COLOR = {"UP": COLOR_UP, "DOWN": COLOR_DOWN, "STABLE": COLOR_STABLE}
+DIR_COLOR  = {"UP": C["up"],   "DOWN": C["down"],   "STABLE": C["stable"]}
+DIR_DIM    = {"UP": C["up_dim"],"DOWN": C["down_dim"],"STABLE": C["stable_dim"]}
+DIR_ICON   = {"UP": "▲",       "DOWN": "▼",          "STABLE": "◆"}
+CONF_COLOR = {"HIGH": C["conf_high"], "MEDIUM": C["conf_mid"], "LOW": C["conf_low"]}
 
-CONF_COLOR = {"HIGH": "#00C896", "MEDIUM": "#F5A623", "LOW": "#888888"}
+ALL_SYMBOLS = list(SYMBOL_NAMES.keys())
 
-# ── caching ────────────────────────────────────────────────────────────────────
+# ── CSS ────────────────────────────────────────────────────────────────────────
 
+def _inject_css():
+    st.markdown(f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    html, body, [class*="css"] {{
+        font-family: 'Inter', -apple-system, sans-serif;
+        background-color: {C['bg']};
+        color: {C['text']};
+    }}
+    .stApp {{ background-color: {C['bg']}; }}
+    .block-container {{ padding: 1.2rem 2rem 3rem 2rem; max-width: 1600px; }}
+
+    /* Hide default Streamlit chrome */
+    #MainMenu, footer, header {{ visibility: hidden; }}
+    .stDeployButton {{ display: none; }}
+    [data-testid="stSidebar"] {{ background: {C['surface']}; border-right: 1px solid {C['border']}; }}
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {{ width: 4px; height: 4px; }}
+    ::-webkit-scrollbar-track {{ background: {C['bg']}; }}
+    ::-webkit-scrollbar-thumb {{ background: {C['border_hi']}; border-radius: 2px; }}
+
+    /* Buttons */
+    .stButton > button {{
+        background: transparent;
+        border: 1px solid {C['border_hi']};
+        color: {C['text2']};
+        border-radius: 6px;
+        font-size: 0.78rem;
+        padding: 4px 10px;
+        transition: all 0.15s ease;
+        font-family: 'Inter', sans-serif;
+    }}
+    .stButton > button:hover {{
+        border-color: {C['accent']};
+        color: {C['accent']};
+        background: {C['accent_dim']};
+    }}
+
+    /* Metric cards */
+    div[data-testid="metric-container"] {{
+        background: {C['surface']};
+        border: 1px solid {C['border']};
+        border-radius: 10px;
+        padding: 14px 16px;
+    }}
+    div[data-testid="metric-container"] label {{
+        color: {C['text2']} !important;
+        font-size: 0.72rem !important;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }}
+    div[data-testid="metric-container"] [data-testid="stMetricValue"] {{
+        color: {C['text']} !important;
+        font-size: 1.3rem !important;
+        font-weight: 600;
+        font-family: 'JetBrains Mono', monospace;
+    }}
+
+    /* Radio + select */
+    .stRadio > div {{ gap: 8px; }}
+    .stRadio label {{ font-size: 0.8rem; color: {C['text2']}; }}
+    .stSelectbox label {{ color: {C['text2']}; font-size: 0.8rem; }}
+
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {{
+        gap: 4px;
+        background: transparent;
+        border-bottom: 1px solid {C['border']};
+    }}
+    .stTabs [data-baseweb="tab"] {{
+        background: transparent;
+        border: none;
+        color: {C['text2']};
+        font-size: 0.82rem;
+        padding: 6px 14px;
+        border-radius: 6px 6px 0 0;
+    }}
+    .stTabs [aria-selected="true"] {{
+        background: {C['surface']} !important;
+        color: {C['text']} !important;
+        border-bottom: 2px solid {C['accent']};
+    }}
+
+    /* Ticker animation */
+    @keyframes ticker-scroll {{
+        0%   {{ transform: translateX(0); }}
+        100% {{ transform: translateX(-50%); }}
+    }}
+    .ticker-wrap {{
+        overflow: hidden;
+        background: {C['surface']};
+        border-top: 1px solid {C['border']};
+        border-bottom: 1px solid {C['border']};
+        padding: 8px 0;
+        margin: -1rem -2rem 1.4rem -2rem;
+    }}
+    .ticker-inner {{
+        display: flex;
+        animation: ticker-scroll 40s linear infinite;
+        width: max-content;
+    }}
+    .ticker-item {{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 28px;
+        white-space: nowrap;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78rem;
+        border-right: 1px solid {C['border']};
+    }}
+    .ticker-sep {{
+        padding: 0 28px;
+        color: {C['text3']};
+        font-size: 0.6rem;
+        border-right: 1px solid {C['border']};
+    }}
+
+    /* Commodity cards */
+    .comm-card {{
+        background: {C['surface']};
+        border: 1px solid {C['border']};
+        border-radius: 12px;
+        padding: 16px;
+        cursor: pointer;
+        transition: all 0.18s ease;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+    }}
+    .comm-card::before {{
+        content: '';
+        position: absolute;
+        top: 0; left: 0;
+        width: 3px; height: 100%;
+        border-radius: 12px 0 0 12px;
+    }}
+    .comm-card:hover {{
+        border-color: {C['border_hi']};
+        transform: translateY(-1px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }}
+    .comm-card.active {{
+        border-color: {C['accent']} !important;
+        background: linear-gradient(135deg, {C['surface']} 0%, rgba(61,127,255,0.05) 100%);
+    }}
+    .comm-card.up::before {{ background: {C['up']}; }}
+    .comm-card.down::before {{ background: {C['down']}; }}
+    .comm-card.stable::before {{ background: {C['stable']}; }}
+
+    /* Signal pill */
+    .signal-pill {{
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 20px;
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }}
+
+    /* Macro bar */
+    .macro-item {{
+        text-align: center;
+        padding: 10px 16px;
+        background: {C['surface']};
+        border: 1px solid {C['border']};
+        border-radius: 8px;
+    }}
+    .macro-label {{ font-size: 0.65rem; color: {C['text3']}; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 3px; }}
+    .macro-value {{ font-size: 1.05rem; font-weight: 600; font-family: 'JetBrains Mono', monospace; color: {C['text']}; }}
+    .macro-change {{ font-size: 0.68rem; margin-top: 2px; }}
+
+    /* AI report */
+    .ai-report {{
+        background: linear-gradient(135deg, {C['surface2']} 0%, rgba(61,127,255,0.04) 100%);
+        border: 1px solid {C['border']};
+        border-left: 3px solid {C['accent']};
+        border-radius: 10px;
+        padding: 16px 20px;
+        line-height: 1.7;
+        font-size: 0.9rem;
+        color: {C['text']};
+    }}
+
+    /* News row */
+    .news-row {{
+        padding: 10px 0;
+        border-bottom: 1px solid {C['border']};
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    }}
+
+    /* COT bar */
+    .cot-label {{ font-size: 0.7rem; color: {C['text2']}; margin-bottom: 4px; }}
+    .cot-bar-wrap {{
+        height: 6px;
+        background: {C['surface2']};
+        border-radius: 3px;
+        overflow: hidden;
+        margin-bottom: 10px;
+    }}
+
+    /* Section header */
+    .section-header {{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid {C['border']};
+    }}
+    .section-title {{
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: {C['text2']};
+    }}
+    .section-dot {{ width: 6px; height: 6px; border-radius: 50%; background: {C['accent']}; }}
+
+    /* Confidence arc */
+    .conf-badge {{
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+
+# ── data loaders ───────────────────────────────────────────────────────────────
 
 @st.cache_resource
 def _ensure_schema():
-    """Initialize DB schema once per process."""
     init_schema()
-
 
 @st.cache_data(ttl=3600)
 def _load_forecast(symbol: str) -> dict:
-    """Cache forecast for 1 hour — expensive ML inference."""
     return predict(symbol)
 
+@st.cache_data(ttl=3600)
+def _load_all_forecasts(symbols: tuple) -> dict:
+    return {s: _load_forecast(s) for s in symbols}
 
 @st.cache_data(ttl=3600)
 def _load_price_history(symbol: str, days: int = 90) -> pd.DataFrame:
-    cutoff = date.today() - timedelta(days=days)
     conn = get_conn()
     df = conn.execute(
-        "SELECT date, open, high, low, close FROM prices WHERE symbol = ? AND date >= ? ORDER BY date",
-        [symbol, cutoff],
+        "SELECT date, open, high, low, close FROM prices "
+        "WHERE symbol = ? AND date >= ? ORDER BY date",
+        [symbol, (date.today() - timedelta(days=days)).isoformat()],
     ).df()
     conn.close()
     return df
 
-
 @st.cache_data(ttl=3600)
-def _load_sentiment_history(symbol: str, days: int = 30) -> pd.DataFrame:
-    cutoff = date.today() - timedelta(days=days)
+def _load_sentiment_history(symbol: str, days: int = 60) -> pd.DataFrame:
     conn = get_conn()
     df = conn.execute(
         "SELECT date, sentiment_score, article_count FROM sentiment_daily "
         "WHERE commodity = ? AND date >= ? ORDER BY date",
-        [symbol, cutoff],
+        [symbol, (date.today() - timedelta(days=days)).isoformat()],
     ).df()
     conn.close()
     return df
 
-
 @st.cache_data(ttl=3600)
-def _load_recent_news(symbol: str, limit: int = 20) -> pd.DataFrame:
+def _load_cot_history(symbol: str, weeks: int = 104) -> pd.DataFrame:
     conn = get_conn()
     df = conn.execute(
-        """
-        SELECT published_date, title, url, sentiment_score, commodity_tags
-        FROM news_raw
-        WHERE commodity_tags LIKE ?
-        ORDER BY published_date DESC
-        LIMIT ?
-        """,
+        "SELECT date, commercial_net_pct, mm_net_pct, open_interest "
+        "FROM cot_data WHERE symbol = ? ORDER BY date DESC LIMIT ?",
+        [symbol, weeks],
+    ).df()
+    conn.close()
+    return df.sort_values("date").reset_index(drop=True) if not df.empty else df
+
+@st.cache_data(ttl=3600)
+def _load_macro_env() -> dict:
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT dxy, vix, treasury_10y, fedfunds, financial_stress, copper_basis "
+            "FROM fred_data WHERE dxy IS NOT NULL ORDER BY date DESC LIMIT 1"
+        ).fetchone()
+    except Exception:
+        row = None
+    conn.close()
+    if row:
+        return {"dxy": row[0], "vix": row[1], "t10y": row[2],
+                "fedfunds": row[3], "stress": row[4], "copper_basis": row[5]}
+    return {}
+
+@st.cache_data(ttl=3600)
+def _load_recent_news(symbol: str, limit: int = 15) -> pd.DataFrame:
+    conn = get_conn()
+    df = conn.execute(
+        "SELECT published_date, title, url, sentiment_score FROM news_raw "
+        "WHERE commodity_tags LIKE ? ORDER BY published_date DESC LIMIT ?",
         [f"%{symbol}%", limit],
     ).df()
     conn.close()
     return df
 
-
 @st.cache_data(ttl=3600)
-def _load_weather_latest(symbol: str) -> dict:
+def _load_weather(symbol: str) -> dict:
     from signals.weather_features import get_weather_features
     return get_weather_features(symbol, days=30)
 
-
 @st.cache_data(ttl=3600)
-def _load_all_forecasts_cached(symbols_tuple: tuple) -> dict:
-    """Load forecasts for a fixed set of symbols (tuple for hashability)."""
-    return {sym: _load_forecast(sym) for sym in symbols_tuple}
+def _load_eia_history(series: str, weeks: int = 52) -> pd.DataFrame:
+    conn = get_conn()
+    df = conn.execute(
+        "SELECT date, value, chg_1w, vs_5yr_avg FROM eia_inventory "
+        "WHERE series = ? ORDER BY date DESC LIMIT ?",
+        [series, weeks],
+    ).df()
+    conn.close()
+    return df.sort_values("date").reset_index(drop=True) if not df.empty else df
+
+# ── header ─────────────────────────────────────────────────────────────────────
+
+def _render_header():
+    now = datetime.now()
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                padding:16px 0 12px 0;border-bottom:1px solid {C['border']};margin-bottom:0;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="font-size:1.6rem;font-weight:700;letter-spacing:-0.02em;
+                    background:linear-gradient(135deg,{C['text']} 0%,{C['accent']} 100%);
+                    -webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+          ◈ CommodiSense
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;
+                    background:{C['surface']};border:1px solid {C['border']};
+                    border-radius:20px;padding:3px 10px;">
+          <div style="width:6px;height:6px;border-radius:50%;background:{C['up']};
+                      box-shadow:0 0 6px {C['up']};animation:pulse 2s infinite;"></div>
+          <span style="font-size:0.68rem;color:{C['up']};font-weight:600;letter-spacing:0.06em;">LIVE</span>
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:0.7rem;color:{C['text3']};letter-spacing:0.06em;text-transform:uppercase;">
+          Global Commodity Intelligence
+        </div>
+        <div style="font-size:0.78rem;color:{C['text2']};font-family:'JetBrains Mono',monospace;">
+          {now.strftime('%a %d %b %Y  %H:%M')} UTC
+        </div>
+      </div>
+    </div>
+    <style>
+    @keyframes pulse {{
+      0%,100% {{ opacity:1; }} 50% {{ opacity:0.4; }}
+    }}
+    </style>
+    """, unsafe_allow_html=True)
 
 
-# ── helpers ────────────────────────────────────────────────────────────────────
+# ── ticker strip ───────────────────────────────────────────────────────────────
+
+def _render_ticker(forecasts: dict, horizon_key: str):
+    fk = "forecast_7d" if horizon_key == "7d" else "forecast_30d"
+    items_html = ""
+    for sym in ALL_SYMBOLS:
+        fc = forecasts.get(sym, {})
+        if "error" in fc or not fc:
+            continue
+        f     = fc.get(fk, {})
+        price = fc.get("current_price", 0)
+        dir_  = f.get("direction", "STABLE")
+        prob  = f.get("probability", 0)
+        icon  = DIR_ICON.get(dir_, "◆")
+        col   = DIR_COLOR.get(dir_, C["stable"])
+        name  = SYMBOL_NAMES.get(sym, sym).upper()
+        items_html += f"""
+        <div class="ticker-item">
+          <span style="color:{C['text3']};font-size:0.65rem;">{sym}</span>
+          <span style="color:{C['text']};font-weight:500;">{name}</span>
+          <span style="color:{C['text2']};">${price:,.2f}</span>
+          <span style="color:{col};font-weight:600;">{icon} {prob:.0%}</span>
+        </div>"""
+
+    # Double for seamless loop
+    st.markdown(f"""
+    <div class="ticker-wrap">
+      <div class="ticker-inner">{items_html}{items_html}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
-def _direction_badge(direction: str, confidence: str) -> str:
-    arrow  = DIRECTION_ARROW.get(direction, "→")
-    color  = DIRECTION_COLOR.get(direction, COLOR_STABLE)
-    ccolor = CONF_COLOR.get(confidence, COLOR_STABLE)
-    return (
-        f'<span style="color:{color};font-size:1.4em;font-weight:bold">{arrow}</span>'
-        f' <span style="background:{ccolor};color:#000;border-radius:4px;'
-        f'padding:2px 6px;font-size:0.75em;font-weight:600">{confidence}</span>'
-    )
+# ── macro environment bar ──────────────────────────────────────────────────────
+
+def _render_macro_bar():
+    macro = _load_macro_env()
+    if not macro:
+        return
+
+    def _change_html(val, neutral=0, invert=False, fmt=".2f", suffix=""):
+        if val is None:
+            return ""
+        diff = val - neutral
+        if invert:
+            diff = -diff
+        col = C["up"] if diff > 0 else (C["down"] if diff < 0 else C["stable"])
+        sign = "+" if diff > 0 else ""
+        return f'<span style="color:{col}">{sign}{diff:{fmt}}{suffix}</span>'
+
+    vix = macro.get("vix") or 0
+    vix_regime = "HIGH FEAR" if vix > 30 else ("CAUTION" if vix > 20 else "CALM")
+    vix_col = C["down"] if vix > 30 else (C["gold"] if vix > 20 else C["up"])
+
+    dxy = macro.get("dxy") or 0
+    t10y = macro.get("t10y") or 0
+    ff = macro.get("fedfunds") or 0
+    yield_inv = t10y < ff
+    spread = t10y - ff
+
+    st.markdown(f"""
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:20px;">
+      <div class="macro-item">
+        <div class="macro-label">USD Index (DXY)</div>
+        <div class="macro-value">{dxy:.1f}</div>
+        <div class="macro-change" style="color:{C['text3']}">Broad USD Strength</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-label">VIX Volatility</div>
+        <div class="macro-value" style="color:{vix_col}">{vix:.1f}</div>
+        <div class="macro-change" style="color:{vix_col}">{vix_regime}</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-label">10Y Treasury</div>
+        <div class="macro-value">{t10y:.2f}%</div>
+        <div class="macro-change" style="color:{C['text3']}">US Yield</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-label">Fed Funds</div>
+        <div class="macro-value">{ff:.2f}%</div>
+        <div class="macro-change" style="color:{C['text3']}">Policy Rate</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-label">Yield Spread</div>
+        <div class="macro-value" style="color:{C['down'] if yield_inv else C['up']}">{spread:+.2f}%</div>
+        <div class="macro-change" style="color:{C['down'] if yield_inv else C['text3']}">
+          {'⚠ INVERTED' if yield_inv else 'Normal'}
+        </div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-label">Copper 3M Trend</div>
+        <div class="macro-value" style="color:{C['up'] if (macro.get('copper_basis') or 0) > 0 else C['down']}">
+          {(macro.get('copper_basis') or 0):+.1f}%
+        </div>
+        <div class="macro-change" style="color:{C['text3']}">Industrial Demand</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
-def _sentiment_color(score: float) -> str:
-    if score > 0.1:
-        return COLOR_UP
-    if score < -0.1:
-        return COLOR_DOWN
-    return COLOR_STABLE
+# ── commodity grid ─────────────────────────────────────────────────────────────
 
+def _render_commodity_grid(forecasts: dict, horizon_key: str, active_sym: str) -> str | None:
+    fk = "forecast_7d" if horizon_key == "7d" else "forecast_30d"
 
-# ── sidebar ────────────────────────────────────────────────────────────────────
-
-
-def _render_sidebar() -> tuple[list[str], str, int, bool]:
-    st.sidebar.title("⚙️ Controls")
-
-    selected = st.sidebar.multiselect(
-        "Commodities",
-        options=ALL_SYMBOLS,
-        default=ALL_SYMBOLS,
-        format_func=lambda s: SYMBOL_NAMES.get(s, s),
-    )
-    if not selected:
-        selected = ALL_SYMBOLS
-
-    horizon = st.sidebar.radio("Forecast horizon", ["7-day", "30-day"], index=0)
-
-    history_days = st.sidebar.slider("Price chart (days)", 30, 365, 90, step=15)
-
-    refresh = st.sidebar.button("🔄 Refresh data", use_container_width=True)
-    if refresh:
-        st.cache_data.clear()
-        st.rerun()
-
-    st.sidebar.markdown("---")
-    st.sidebar.caption(f"Last update: {date.today().isoformat()}")
-    st.sidebar.caption("Data: yfinance · GDELT · Open-Meteo · ACLED")
-
-    return selected, horizon, history_days, refresh
-
-
-# ── Section 1: Market Overview ─────────────────────────────────────────────────
-
-
-def _render_overview(selected_symbols: list[str], horizon_key: str) -> str | None:
-    """
-    Render a grid of metric cards for all selected commodities.
-    Returns the symbol the user clicked to deep-dive, or None.
-    """
-    st.subheader("Market Overview")
-
-    forecasts = _load_all_forecasts_cached(tuple(selected_symbols))
-
-    # 5 columns per row
-    cols_per_row = 5
-    rows = [selected_symbols[i : i + cols_per_row]
-            for i in range(0, len(selected_symbols), cols_per_row)]
+    st.markdown(f"""
+    <div class="section-header">
+      <div class="section-dot"></div>
+      <div class="section-title">Market Overview — {horizon_key.upper()} Forecast</div>
+    </div>
+    """, unsafe_allow_html=True)
 
     clicked = None
+    rows = [ALL_SYMBOLS[i:i+5] for i in range(0, len(ALL_SYMBOLS), 5)]
+
     for row_syms in rows:
         cols = st.columns(len(row_syms))
         for col, sym in zip(cols, row_syms):
             fc = forecasts.get(sym, {})
-            if "error" in fc:
-                with col:
-                    st.error(f"{SYMBOL_NAMES.get(sym, sym)}\nNo model")
-                continue
-
-            fc_key  = "forecast_7d" if horizon_key == "7-day" else "forecast_30d"
-            fcast   = fc.get(fc_key, {})
-            direction  = fcast.get("direction", "STABLE")
-            confidence = fcast.get("confidence", "LOW")
-            prob       = fcast.get("probability", 0.5)
-            price      = fc.get("current_price", 0)
-            name       = SYMBOL_NAMES.get(sym, sym)
-
-            arrow  = DIRECTION_ARROW.get(direction, "→")
-            dcolor = DIRECTION_COLOR.get(direction, COLOR_STABLE)
-            ccolor = CONF_COLOR.get(confidence, "#888")
-
-            bg = {"UP": "#0a2e1a", "DOWN": "#2e0a0a", "STABLE": "#1a1a1a"}.get(direction, "#1a1a1a")
+            f  = fc.get(fk, {}) if fc and "error" not in fc else {}
+            dir_  = f.get("direction", "STABLE")
+            conf  = f.get("confidence", "LOW")
+            prob  = f.get("probability", 0.5)
+            price = fc.get("current_price", 0) if fc else 0
+            name  = SYMBOL_NAMES.get(sym, sym)
+            icon  = DIR_ICON.get(dir_, "◆")
+            dcol  = DIR_COLOR.get(dir_, C["stable"])
+            ddim  = DIR_DICT = DIR_DIM.get(dir_, C["stable_dim"])
+            ccol  = CONF_COLOR.get(conf, C["conf_low"])
+            is_active = sym == active_sym
+            warn  = fc.get("forecast_7d", {}).get("model_warning") if fc else None
 
             with col:
-                st.markdown(
-                    f"""
-                    <div style="background:{bg};border-radius:8px;padding:12px 10px;
-                                border:1px solid {dcolor}33;margin-bottom:4px;">
-                      <div style="font-size:0.75em;color:#aaa;margin-bottom:2px">{sym}</div>
-                      <div style="font-size:1.0em;font-weight:600;color:#fff">{name}</div>
-                      <div style="font-size:1.3em;color:#ddd;margin:4px 0">${price:,.2f}</div>
-                      <div style="font-size:1.6em;color:{dcolor};font-weight:700">{arrow}
-                        <span style="font-size:0.6em;color:{ccolor};background:{ccolor}22;
-                                     border-radius:3px;padding:1px 5px">{confidence}</span>
-                      </div>
-                      <div style="font-size:0.7em;color:#888">{prob:.0%} conf · {horizon_key}</div>
+                st.markdown(f"""
+                <div class="comm-card {dir_.lower()} {'active' if is_active else ''}"
+                     style="background:linear-gradient(145deg,{C['surface']} 0%,{ddim} 100%);">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+                    <div>
+                      <div style="font-size:0.65rem;color:{C['text3']};letter-spacing:0.08em;font-family:'JetBrains Mono',monospace;">{sym}</div>
+                      <div style="font-size:0.88rem;font-weight:600;color:{C['text']};margin-top:1px;">{name}</div>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                if st.button(f"Deep dive →", key=f"btn_{sym}", use_container_width=True):
+                    <div style="background:{ccol}22;border:1px solid {ccol}44;border-radius:4px;
+                                padding:2px 6px;font-size:0.6rem;font-weight:700;color:{ccol};
+                                letter-spacing:0.06em;">{conf}</div>
+                  </div>
+                  <div style="font-size:1.05rem;font-weight:600;color:{C['text']};
+                              font-family:'JetBrains Mono',monospace;margin-bottom:6px;">
+                    ${price:,.2f}
+                  </div>
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span style="font-size:1.5rem;color:{dcol};font-weight:700;line-height:1;">{icon}</span>
+                    <div>
+                      <div style="font-size:0.82rem;color:{dcol};font-weight:600;">{dir_}</div>
+                      <div style="font-size:0.65rem;color:{C['text3']};">{prob:.0%} probability</div>
+                    </div>
+                  </div>
+                  {'<div style="margin-top:6px;font-size:0.62rem;color:' + C["gold"] + ';background:' + C["gold"] + '15;border-radius:3px;padding:2px 5px;">⚠ Use 30d model</div>' if warn and horizon_key == "7d" else ''}
+                </div>
+                """, unsafe_allow_html=True)
+
+                if st.button("Analyze →", key=f"btn_{sym}", use_container_width=True):
                     clicked = sym
 
     return clicked
 
 
-# ── Section 2: Deep Dive ───────────────────────────────────────────────────────
+# ── deep dive ──────────────────────────────────────────────────────────────────
 
-
-def _render_price_chart(symbol: str, history_days: int, fc: dict, horizon_key: str):
-    df = _load_price_history(symbol, history_days)
+def _price_chart(symbol: str, days: int, fc: dict, horizon_key: str):
+    df = _load_price_history(symbol, days)
     if df.empty:
-        st.info("No price history in database. Run the price collector first.")
+        st.info("No price history — run the price collector.")
         return
 
-    fc_key  = "forecast_7d" if horizon_key == "7-day" else "forecast_30d"
-    fcast   = fc.get(fc_key, {})
-    direction = fcast.get("direction", "STABLE")
-    low  = fcast.get("price_range_low", None)
-    high = fcast.get("price_range_high", None)
-    dcolor = DIRECTION_COLOR.get(direction, COLOR_STABLE)
+    fk    = "forecast_7d" if horizon_key == "7d" else "forecast_30d"
+    fcast = fc.get(fk, {})
+    dir_  = fcast.get("direction", "STABLE")
+    dcol  = DIR_COLOR.get(dir_, C["stable"])
+    low   = fcast.get("price_range_low")
+    high  = fcast.get("price_range_high")
 
     fig = go.Figure()
 
-    # Candlestick
     fig.add_trace(go.Candlestick(
-        x=df["date"],
-        open=df["open"], high=df["high"],
-        low=df["low"],   close=df["close"],
-        name="Price",
-        increasing_line_color=COLOR_UP,
-        decreasing_line_color=COLOR_DOWN,
+        x=df["date"], open=df["open"], high=df["high"],
+        low=df["low"], close=df["close"], name="Price",
+        increasing=dict(line=dict(color=C["up"], width=1), fillcolor=C["up_dim"]),
+        decreasing=dict(line=dict(color=C["down"], width=1), fillcolor=C["down_dim"]),
     ))
 
-    # Forecast range band (extend 7 or 30 days from last date)
+    # 20-day SMA
+    df["sma20"] = df["close"].rolling(20, min_periods=1).mean()
+    fig.add_trace(go.Scatter(
+        x=df["date"], y=df["sma20"], mode="lines",
+        line=dict(color=C["accent"], width=1.2, dash="dot"),
+        name="SMA 20", opacity=0.6,
+    ))
+
+    # Forecast zone
     if low and high and not df.empty:
         last_date = pd.to_datetime(df["date"].max())
-        days_fwd  = 7 if horizon_key == "7-day" else 30
-        fwd_date  = last_date + timedelta(days=days_fwd)
-        last_close = float(df["close"].iloc[-1])
+        fwd = last_date + timedelta(days=7 if horizon_key == "7d" else 30)
         fig.add_shape(type="rect",
-            x0=str(last_date.date()), x1=str(fwd_date.date()),
+            x0=str(last_date.date()), x1=str(fwd.date()),
             y0=low, y1=high,
-            fillcolor=dcolor, opacity=0.12,
-            line=dict(color=dcolor, width=1, dash="dot"),
+            fillcolor=dcol, opacity=0.10,
+            line=dict(color=dcol, width=1, dash="dot"),
         )
         fig.add_annotation(
-            x=str(fwd_date.date()), y=(low + high) / 2,
-            text=f"{direction} {fcast.get('probability', 0):.0%}",
-            showarrow=False, font=dict(color=dcolor, size=11),
-            bgcolor="#0E1117", bordercolor=dcolor,
+            x=str(fwd.date()), y=(low + high) / 2,
+            text=f"  {DIR_ICON.get(dir_,'')} {dir_} {fcast.get('probability',0):.0%}",
+            showarrow=False, font=dict(color=dcol, size=11, family="JetBrains Mono"),
+            bgcolor=C["surface2"], bordercolor=dcol,
         )
 
-    name = SYMBOL_NAMES.get(symbol, symbol)
     fig.update_layout(
         template="plotly_dark",
-        title=f"{name} — last {history_days} days",
+        paper_bgcolor=C["bg"], plot_bgcolor=C["bg"],
         xaxis_rangeslider_visible=False,
-        height=380,
-        margin=dict(l=10, r=10, t=40, b=10),
-        paper_bgcolor=COLOR_BG,
-        plot_bgcolor=COLOR_BG,
+        height=360,
+        margin=dict(l=0, r=0, t=8, b=0),
+        legend=dict(orientation="h", x=0, y=1.06, font=dict(size=10, color=C["text2"])),
+        xaxis=dict(gridcolor=C["surface2"], showgrid=True),
+        yaxis=dict(gridcolor=C["surface2"], showgrid=True),
+        font=dict(family="Inter", color=C["text2"]),
     )
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_shap_chart(fc: dict):
+def _shap_chart(fc: dict):
     signals = fc.get("top_signals", [])
     if not signals:
-        st.info("Run model/trainer.py to enable SHAP signal breakdown.")
+        st.caption("No SHAP signals — retrain models to enable.")
         return
 
-    labels  = [s.get("label", s.get("feature", ""))[:30] for s in signals]
+    labels  = [s.get("label", s.get("feature", ""))[:32] for s in signals]
     weights = [s["weight"] if s["impact"] == "BULLISH" else -s["weight"] for s in signals]
-    colors  = [COLOR_UP if w > 0 else COLOR_DOWN for w in weights]
+    colors  = [C["up"] if w > 0 else C["down"] for w in weights]
 
     fig = go.Figure(go.Bar(
-        x=weights,
-        y=labels,
-        orientation="h",
-        marker_color=colors,
-        text=[f"{abs(w):.3f}" for w in weights],
-        textposition="outside",
+        x=weights, y=labels, orientation="h",
+        marker=dict(color=colors, opacity=0.85),
+        text=[f"{'▲' if w>0 else '▼'} {abs(w):.3f}" for w in weights],
+        textposition="outside", textfont=dict(size=10, family="JetBrains Mono", color=C["text2"]),
     ))
     fig.update_layout(
         template="plotly_dark",
-        title="Top Signal Drivers (SHAP)",
-        xaxis_title="Impact (+ bullish, − bearish)",
-        height=280,
-        margin=dict(l=10, r=10, t=40, b=10),
-        paper_bgcolor=COLOR_BG,
-        plot_bgcolor=COLOR_BG,
+        paper_bgcolor=C["bg"], plot_bgcolor=C["bg"],
+        title=dict(text="Top Signal Drivers (SHAP)", font=dict(size=11, color=C["text2"])),
+        xaxis=dict(gridcolor=C["surface2"], zeroline=True, zerolinecolor=C["border_hi"],
+                   showticklabels=False),
+        yaxis=dict(gridcolor="transparent"),
+        height=260, margin=dict(l=0, r=40, t=32, b=0),
         showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_sentiment_chart(symbol: str):
-    df = _load_sentiment_history(symbol, days=30)
+def _cot_chart(symbol: str):
+    df = _load_cot_history(symbol)
     if df.empty:
-        st.caption("No sentiment data yet — run the NLP sentiment processor.")
+        st.caption("No COT data for this symbol.")
         return
 
-    colors = [_sentiment_color(float(s)) for s in df["sentiment_score"].fillna(0)]
     fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["date"], y=df["commercial_net_pct"] * 100,
+        mode="lines", fill="tozeroy",
+        line=dict(color=C["up"], width=1.5),
+        fillcolor="rgba(0,217,126,0.08)",
+        name="Commercial (Smart $)",
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["date"], y=df["mm_net_pct"] * 100,
+        mode="lines", fill="tozeroy",
+        line=dict(color=C["accent"], width=1.5),
+        fillcolor="rgba(61,127,255,0.08)",
+        name="Managed Money",
+    ))
+    fig.add_hline(y=0, line_dash="dot", line_color=C["border_hi"], line_width=1)
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor=C["bg"], plot_bgcolor=C["bg"],
+        title=dict(text="COT Positioning — % of Open Interest", font=dict(size=11, color=C["text2"])),
+        xaxis=dict(gridcolor=C["surface2"]),
+        yaxis=dict(gridcolor=C["surface2"], ticksuffix="%"),
+        height=220, margin=dict(l=0, r=0, t=32, b=0),
+        legend=dict(orientation="h", x=0, y=1.12, font=dict(size=10)),
+        font=dict(family="Inter", color=C["text2"]),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _sentiment_chart(symbol: str):
+    df = _load_sentiment_history(symbol)
+    if df.empty:
+        st.caption("No sentiment data — run the NLP processor.")
+        return
+
+    colors = [C["up"] if float(s) > 0.1 else (C["down"] if float(s) < -0.1 else C["stable"])
+              for s in df["sentiment_score"].fillna(0)]
+
+    fig = go.Figure()
+    fig.add_hrect(y0=0.1, y1=1, fillcolor=C["up_dim"], opacity=1, line_width=0)
+    fig.add_hrect(y0=-1, y1=-0.1, fillcolor=C["down_dim"], opacity=1, line_width=0)
     fig.add_trace(go.Scatter(
         x=df["date"], y=df["sentiment_score"],
         mode="lines+markers",
-        line=dict(color="#5B9BD5", width=2),
-        marker=dict(color=colors, size=6),
+        line=dict(color=C["text2"], width=1.5),
+        marker=dict(color=colors, size=5),
+        fill="tozeroy", fillcolor="rgba(139,148,158,0.06)",
         name="Sentiment",
-        fill="tozeroy",
-        fillcolor="rgba(91,155,213,0.1)",
     ))
-    fig.add_hline(y=0, line_dash="dot", line_color="#555")
+    fig.add_hline(y=0, line_dash="solid", line_color=C["border_hi"], line_width=1)
     fig.update_layout(
         template="plotly_dark",
-        title="News Sentiment (30-day)",
-        yaxis=dict(range=[-1, 1], tickformat=".1f"),
-        height=220,
-        margin=dict(l=10, r=10, t=40, b=10),
-        paper_bgcolor=COLOR_BG,
-        plot_bgcolor=COLOR_BG,
+        paper_bgcolor=C["bg"], plot_bgcolor=C["bg"],
+        title=dict(text="News Sentiment (60-day)", font=dict(size=11, color=C["text2"])),
+        yaxis=dict(range=[-1, 1], gridcolor=C["surface2"], tickformat=".1f"),
+        xaxis=dict(gridcolor=C["surface2"]),
+        height=200, margin=dict(l=0, r=0, t=32, b=0),
         showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_deep_dive(symbol: str, history_days: int, horizon_key: str):
+def _eia_chart(symbol: str):
+    series = {"CL=F": "crude_stocks", "NG=F": "natgas_storage"}.get(symbol)
+    if not series:
+        return
+    df = _load_eia_history(series)
+    if df.empty:
+        return
+
+    label = "Crude Oil Stocks (Mbbls)" if symbol == "CL=F" else "Natural Gas Storage (Bcf)"
+    div = 1000 if symbol == "CL=F" else 1
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=df["date"], y=df["value"] / div,
+        name=label,
+        marker=dict(
+            color=[C["down_dim"] if (v or 0) > 0 else C["up_dim"] for v in df.get("chg_1w", [])],
+            line=dict(width=0),
+        ),
+        opacity=0.8,
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["date"], y=(df["value"] / div).rolling(4).mean(),
+        mode="lines", line=dict(color=C["accent"], width=1.5, dash="dot"),
+        name="4-wk avg",
+    ))
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor=C["bg"], plot_bgcolor=C["bg"],
+        title=dict(text=label, font=dict(size=11, color=C["text2"])),
+        height=200, margin=dict(l=0, r=0, t=32, b=0),
+        legend=dict(orientation="h", x=0, y=1.15, font=dict(size=10)),
+        xaxis=dict(gridcolor=C["surface2"]),
+        yaxis=dict(gridcolor=C["surface2"]),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_deep_dive(symbol: str, days: int, horizon_key: str):
     fc   = _load_forecast(symbol)
     name = SYMBOL_NAMES.get(symbol, symbol)
 
     if "error" in fc:
-        st.warning(f"No forecast for {name} — models not trained yet. "
-                   "Run `python model/trainer.py` after backfilling data.")
+        st.warning(f"No forecast for {name} — run `python model/trainer.py --symbol {symbol}`")
         return
 
-    fc_key    = "forecast_7d" if horizon_key == "7-day" else "forecast_30d"
-    fcast     = fc.get(fc_key, {})
-    direction = fcast.get("direction", "STABLE")
-    prob      = fcast.get("probability", 0.5)
-    confidence= fcast.get("confidence", "LOW")
-    price     = fc.get("current_price", 0)
+    fk     = "forecast_7d" if horizon_key == "7d" else "forecast_30d"
+    fcast  = fc.get(fk, {})
+    dir_   = fcast.get("direction", "STABLE")
+    prob   = fcast.get("probability", 0.5)
+    conf   = fcast.get("confidence", "LOW")
+    price  = fc.get("current_price", 0)
+    dcol   = DIR_COLOR.get(dir_, C["stable"])
+    ddim   = DIR_DIM.get(dir_, C["stable_dim"])
+    icon   = DIR_ICON.get(dir_, "◆")
+    ccol   = CONF_COLOR.get(conf, C["conf_low"])
+    warn   = fcast.get("model_warning")
 
-    dcolor = DIRECTION_COLOR.get(direction, COLOR_STABLE)
-    arrow  = DIRECTION_ARROW.get(direction, "→")
-
-    st.markdown(f"## {name} Deep Dive")
-
-    # Headline metrics
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Current Price", f"${price:,.2f}")
-    m2.metric(f"{horizon_key} Forecast",
-              f"{arrow} {direction}",
-              delta=f"{prob:.0%} conf",
-              delta_color="normal" if direction == "UP" else ("inverse" if direction == "DOWN" else "off"))
-    m3.metric("Confidence", confidence)
-    if horizon_key == "7-day" and fcast.get("price_range_low"):
-        m4.metric("Price Range",
-                  f"${fcast['price_range_low']:,.0f} – ${fcast['price_range_high']:,.0f}")
-
-    st.markdown("---")
-
-    # Price chart + SHAP side by side
-    c_chart, c_shap = st.columns([3, 2])
-    with c_chart:
-        _render_price_chart(symbol, history_days, fc, horizon_key)
-    with c_shap:
-        _render_shap_chart(fc)
-
-    # AI Report
-    reports = load_latest_reports()
-    report_text = reports.get(symbol, "")
-    if not report_text:
-        # Generate on demand if no cached report
-        with st.spinner("Generating AI report..."):
-            report_text = generate_report(fc)
-
-    st.markdown(
-        f"""
-        <div style="background:#161B22;border-left:3px solid {dcolor};
-                    border-radius:6px;padding:14px 18px;margin:8px 0;">
-          <div style="color:#888;font-size:0.75em;margin-bottom:6px">
-            🤖 AI Analyst Report
-          </div>
-          <div style="color:#E6EDF3;font-size:0.95em;line-height:1.6">{report_text}</div>
+    # Breadcrumb + headline
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+      <div style="font-size:0.7rem;color:{C['text3']};letter-spacing:0.08em;">ANALYSIS</div>
+      <div style="font-size:0.7rem;color:{C['text3']};">›</div>
+      <div style="font-size:0.85rem;font-weight:600;color:{C['text']};">{name}</div>
+      <div style="font-size:0.65rem;color:{C['text3']};font-family:'JetBrains Mono',monospace;">{symbol}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;padding:18px 20px;
+                background:linear-gradient(135deg,{C['surface']} 0%,{ddim} 100%);
+                border:1px solid {dcol}44;border-radius:12px;margin-bottom:16px;">
+      <div style="font-size:3rem;color:{dcol};line-height:1;">{icon}</div>
+      <div>
+        <div style="font-size:1.9rem;font-weight:700;color:{C['text']};font-family:'JetBrains Mono',monospace;">
+          ${price:,.2f}
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+          <span style="font-size:1.1rem;font-weight:700;color:{dcol};">{dir_}</span>
+          <span style="background:{ccol}22;border:1px solid {ccol}55;color:{ccol};
+                       font-size:0.72rem;font-weight:700;padding:3px 8px;border-radius:20px;">
+            {conf} CONF
+          </span>
+          <span style="font-size:0.85rem;color:{C['text2']};">{prob:.1%} probability · {horizon_key.upper()}</span>
+        </div>
+        {f'<div style="margin-top:6px;font-size:0.72rem;color:{C["gold"]};background:{C["gold"]}18;padding:4px 10px;border-radius:6px;display:inline-block;">⚠ {warn}</div>' if warn else ''}
+      </div>
+      {f'''<div style="margin-left:auto;text-align:right;">
+        <div style="font-size:0.65rem;color:{C["text3"]};text-transform:uppercase;letter-spacing:0.1em;">Price Target Range</div>
+        <div style="font-size:1.1rem;font-weight:600;color:{C["text"]};font-family:'JetBrains Mono',monospace;">
+          ${fcast.get("price_range_low",0):,.0f} – ${fcast.get("price_range_high",0):,.0f}
+        </div>
+      </div>''' if fcast.get("price_range_low") else ''}
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Weather + Sentiment
-    w_col, s_col = st.columns(2)
-    with w_col:
-        st.markdown("**Weather Signals**")
-        weather = _load_weather_latest(symbol)
+    # Main layout: chart | signals
+    chart_col, signal_col = st.columns([3, 2])
+
+    with chart_col:
+        st.markdown(f'<div class="section-header"><div class="section-dot"></div><div class="section-title">Price Chart</div></div>', unsafe_allow_html=True)
+        _price_chart(symbol, days, fc, horizon_key)
+
+    with signal_col:
+        st.markdown(f'<div class="section-header"><div class="section-dot"></div><div class="section-title">Signal Drivers</div></div>', unsafe_allow_html=True)
+        _shap_chart(fc)
+
+        # Both 7d and 30d forecast side by side
+        f7  = fc.get("forecast_7d", {})
+        f30 = fc.get("forecast_30d", {})
+        st.markdown(f"""
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+          <div style="background:{C['surface2']};border:1px solid {C['border']};border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:0.6rem;color:{C['text3']};letter-spacing:0.1em;text-transform:uppercase;margin-bottom:4px;">7-Day</div>
+            <div style="font-size:1.1rem;font-weight:700;color:{DIR_COLOR.get(f7.get('direction','STABLE'),C['stable'])};">
+              {DIR_ICON.get(f7.get('direction','STABLE'),'◆')} {f7.get('direction','—')}
+            </div>
+            <div style="font-size:0.7rem;color:{C['text3']};">{f7.get('probability',0):.0%}</div>
+          </div>
+          <div style="background:{C['surface2']};border:1px solid {C['border']};border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:0.6rem;color:{C['text3']};letter-spacing:0.1em;text-transform:uppercase;margin-bottom:4px;">30-Day</div>
+            <div style="font-size:1.1rem;font-weight:700;color:{DIR_COLOR.get(f30.get('direction','STABLE'),C['stable'])};">
+              {DIR_ICON.get(f30.get('direction','STABLE'),'◆')} {f30.get('direction','—')}
+            </div>
+            <div style="font-size:0.7rem;color:{C['text3']};">{f30.get('probability',0):.0%}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Tabbed data panels
+    tab_labels = ["COT Positioning", "Sentiment", "EIA Inventory", "Weather", "AI Report"]
+    tabs = st.tabs(tab_labels)
+
+    with tabs[0]:
+        _cot_chart(symbol)
+
+    with tabs[1]:
+        _sentiment_chart(symbol)
+
+    with tabs[2]:
+        _eia_chart(symbol)
+        if symbol not in ("CL=F", "NG=F"):
+            st.caption("EIA inventory data is available for Crude Oil (CL=F) and Natural Gas (NG=F) only.")
+
+    with tabs[3]:
+        weather = _load_weather(symbol)
         if weather and weather.get("drought_index", 0) > 0:
             w1, w2, w3 = st.columns(3)
-            w1.metric("Drought Index", f"{weather['drought_index']:.2f}")
+            w1.metric("Drought Index", f"{weather['drought_index']:.2f}", help="0=normal, 1=extreme drought")
             w2.metric("Heat Stress Days", weather["heat_stress_days"])
             w3.metric("Precip Anomaly", f"{weather['precip_anomaly_pct']:+.1f}%")
         else:
-            st.caption("No weather data — run the weather collector.")
+            st.caption("No weather data available. Weather signals apply to agricultural commodities.")
 
-    with s_col:
-        _render_sentiment_chart(symbol)
+    with tabs[4]:
+        reports = load_latest_reports()
+        report_text = reports.get(symbol, "")
+        if not report_text:
+            with st.spinner("Generating AI analysis..."):
+                report_text = generate_report(fc)
+        if report_text:
+            st.markdown(f'<div class="ai-report">🤖&nbsp; <strong>AI Analyst</strong><br><br>{report_text}</div>', unsafe_allow_html=True)
+        else:
+            st.caption("AI report unavailable — set GROQ_API_KEY in your .env file.")
 
 
-# ── Section 3: Recent News ─────────────────────────────────────────────────────
-
+# ── news feed ──────────────────────────────────────────────────────────────────
 
 def _render_news(symbol: str):
-    st.markdown("---")
-    st.subheader(f"Recent News — {SYMBOL_NAMES.get(symbol, symbol)}")
-    df = _load_recent_news(symbol, limit=20)
+    st.markdown(f"""
+    <div class="section-header" style="margin-top:8px;">
+      <div class="section-dot"></div>
+      <div class="section-title">Recent News — {SYMBOL_NAMES.get(symbol, symbol)}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
+    df = _load_recent_news(symbol)
     if df.empty:
-        st.info("No news data yet — run the news collector.")
+        st.caption("No news data — run the news collector.")
         return
 
     for _, row in df.iterrows():
         score = float(row.get("sentiment_score") or 0)
-        sc    = _sentiment_color(score)
-        title = str(row.get("title", ""))
+        scol  = C["up"] if score > 0.1 else (C["down"] if score < -0.1 else C["stable"])
+        sign  = "+" if score > 0 else ""
+        title = str(row.get("title", ""))[:120]
         url   = str(row.get("url", "#"))
         pub   = str(row.get("published_date", ""))[:10]
-        tags  = str(row.get("commodity_tags", ""))
 
-        score_display = f'<span style="color:{sc};font-weight:600">{score:+.2f}</span>'
+        st.markdown(f"""
+        <div class="news-row">
+          <div style="min-width:80px;font-size:0.68rem;color:{C['text3']};
+                      font-family:'JetBrains Mono',monospace;padding-top:1px;">{pub}</div>
+          <div style="min-width:42px;text-align:center;">
+            <span style="background:{scol}22;color:{scol};border-radius:4px;
+                         padding:2px 6px;font-size:0.68rem;font-weight:600;
+                         font-family:'JetBrains Mono',monospace;">{sign}{score:.2f}</span>
+          </div>
+          <div style="flex:1;font-size:0.84rem;color:{C['text']};">
+            <a href="{url}" target="_blank"
+               style="color:{C['text']};text-decoration:none;"
+               onmouseover="this.style.color='{C['accent']}'"
+               onmouseout="this.style.color='{C['text']}'">{title}</a>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        st.markdown(
-            f"""
-            <div style="padding:6px 0;border-bottom:1px solid #21262d">
-              <span style="color:#888;font-size:0.75em">{pub}</span>
-              &nbsp;{score_display}&nbsp;
-              <a href="{url}" target="_blank"
-                 style="color:#58A6FF;text-decoration:none">{title[:120]}</a>
-              <span style="color:#555;font-size:0.7em;margin-left:8px">{tags}</span>
+
+# ── sidebar controls ───────────────────────────────────────────────────────────
+
+def _render_sidebar() -> tuple[str, int]:
+    with st.sidebar:
+        st.markdown(f"""
+        <div style="padding:12px 0 16px 0;border-bottom:1px solid {C['border']};margin-bottom:16px;">
+          <div style="font-size:1.1rem;font-weight:700;
+                      background:linear-gradient(135deg,{C['text']} 0%,{C['accent']} 100%);
+                      -webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+            ◈ CommodiSense
+          </div>
+          <div style="font-size:0.65rem;color:{C['text3']};margin-top:3px;letter-spacing:0.06em;">
+            COMMODITY INTELLIGENCE
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        horizon = st.radio("Forecast Horizon", ["7d", "30d"], index=0,
+                           format_func=lambda x: "7-Day" if x == "7d" else "30-Day")
+
+        days = st.slider("Chart History", 30, 365, 90, step=15,
+                         format="%d days")
+
+        st.markdown("---")
+
+        if st.button("↺ Refresh Data", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+
+        st.markdown(f"""
+        <div style="margin-top:16px;">
+          <div style="font-size:0.65rem;color:{C['text3']};letter-spacing:0.08em;
+                      text-transform:uppercase;margin-bottom:10px;">Data Sources</div>
+        """, unsafe_allow_html=True)
+
+        sources = [
+            ("Prices", "yfinance", "12,613 rows"),
+            ("COT", "CFTC", "8,826 rows"),
+            ("Macro", "FRED", "7,193 rows"),
+            ("EIA", "DOE", "3,134 rows"),
+            ("USDA", "NASS", "1,104 rows"),
+            ("News", "GDELT", "392 articles"),
+            ("Weather", "Open-Meteo", "210 rows"),
+        ]
+        for name, src, count in sources:
+            st.markdown(f"""
+            <div style="display:flex;justify-content:space-between;align-items:center;
+                        padding:5px 0;border-bottom:1px solid {C['border']};">
+              <div style="font-size:0.72rem;color:{C['text2']};font-weight:500;">{name}</div>
+              <div style="text-align:right;">
+                <div style="font-size:0.62rem;color:{C['text3']};font-family:'JetBrains Mono',monospace;">{count}</div>
+              </div>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            """, unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div style="margin-top:20px;padding:10px;background:{C['surface']};
+                    border:1px solid {C['border']};border-radius:8px;font-size:0.65rem;
+                    color:{C['text3']};line-height:1.6;">
+          <div style="color:{C['text2']};font-weight:600;margin-bottom:4px;">Pipeline</div>
+          GitHub Actions · Mon–Fri 06:00 UTC<br>
+          XGBoost + LightGBM ensemble<br>
+          SHAP explainability · FinBERT NLP
+        </div>
+        """, unsafe_allow_html=True)
+
+    return horizon, days
 
 
-# ── main app ───────────────────────────────────────────────────────────────────
-
+# ── main ───────────────────────────────────────────────────────────────────────
 
 def main():
     _ensure_schema()
+    _inject_css()
+    _render_header()
 
-    # Custom CSS for dark polish
-    st.markdown(
-        """
-        <style>
-        .block-container { padding-top: 1.5rem; }
-        div[data-testid="metric-container"] {
-            background: #161B22;
-            border: 1px solid #30363D;
-            border-radius: 8px;
-            padding: 12px;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    horizon, days = _render_sidebar()
 
-    st.title("📊 CommodiSense")
-    st.caption("Global Commodity Intelligence Engine · zero cost · open source")
+    # Load all forecasts at once
+    forecasts = _load_all_forecasts(tuple(ALL_SYMBOLS))
 
-    selected, horizon, history_days, _ = _render_sidebar()
+    # Ticker strip
+    _render_ticker(forecasts, horizon)
 
-    # Section 1: Overview grid
-    clicked_symbol = _render_overview(selected, horizon)
+    # Macro environment
+    _render_macro_bar()
 
-    # Determine which symbol to deep-dive
-    # Use session state to persist selection across reruns
-    if clicked_symbol:
-        st.session_state["deep_dive_symbol"] = clicked_symbol
+    # Commodity grid — track active symbol in session state
+    clicked = _render_commodity_grid(forecasts, horizon,
+                                     st.session_state.get("active_sym", ALL_SYMBOLS[0]))
 
-    deep_sym = st.session_state.get("deep_dive_symbol")
+    if clicked:
+        st.session_state["active_sym"] = clicked
 
-    # If nothing selected yet, default to first selected symbol
-    if not deep_sym or deep_sym not in selected:
-        deep_sym = selected[0] if selected else None
-        if deep_sym:
-            st.session_state["deep_dive_symbol"] = deep_sym
+    active = st.session_state.get("active_sym")
+    if not active:
+        active = ALL_SYMBOLS[0]
+        st.session_state["active_sym"] = active
 
-    # Section 2 + 3 only render if a symbol is active
-    if deep_sym:
-        st.markdown("---")
-        _render_deep_dive(deep_sym, history_days, horizon)
-        _render_news(deep_sym)
+    # Divider
+    st.markdown(f'<div style="height:1px;background:linear-gradient(90deg,transparent,{C["border_hi"]},transparent);margin:20px 0;"></div>', unsafe_allow_html=True)
+
+    # Deep dive
+    _render_deep_dive(active, days, horizon)
+
+    # News
+    st.markdown(f'<div style="height:1px;background:linear-gradient(90deg,transparent,{C["border_hi"]},transparent);margin:20px 0 16px;"></div>', unsafe_allow_html=True)
+    _render_news(active)
 
 
 if __name__ == "__main__":
