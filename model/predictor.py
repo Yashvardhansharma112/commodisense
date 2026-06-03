@@ -237,13 +237,46 @@ def predict(symbol: str, as_of_date: str = None) -> dict:
         direction_30d  = direction_map[pred_class_30d]
         prob_30d       = float(ensemble_proba_30d[pred_class_30d])
 
-    # Confidence tier
+    # Confidence tier — base probability threshold
     def _confidence(prob: float) -> str:
         if prob >= 0.70:
             return "HIGH"
         if prob >= 0.55:
             return "MEDIUM"
         return "LOW"
+
+    # High-confidence signal confirmation: require 2+ independent signals to agree.
+    # Signals checked: price momentum, COT commercial positioning, EIA/USDA flag.
+    def _confirmed_confidence(prob: float, direction: str, feat: pd.Series) -> str:
+        base = _confidence(prob)
+        if base == "LOW":
+            return "LOW"
+        confirming = 0
+        # Signal 1: price momentum agrees
+        mom = float(feat.get("momentum_score", 0) or 0)
+        ret7 = float(feat.get("return_7d", 0) or 0)
+        if direction == "UP"   and (mom > 0 or ret7 > 0):  confirming += 1
+        if direction == "DOWN" and (mom < 0 or ret7 < 0):  confirming += 1
+        # Signal 2: COT commercial positioning agrees (commercials = smart money)
+        cot_net = float(feat.get("cot_commercial_net_pct", 0) or 0)
+        cot_chg = float(feat.get("cot_commercial_chg_1w", 0) or 0)
+        if direction == "UP"   and (cot_net > 0.05 or cot_chg > 0):  confirming += 1
+        if direction == "DOWN" and (cot_net < -0.05 or cot_chg < 0): confirming += 1
+        # Signal 3: EIA supply signal agrees (for CL=F and NG=F)
+        eia_draw   = float(feat.get("eia_crude_draw", 0) or feat.get("eia_natgas_draw", 0) or 0)
+        eia_vs5yr  = float(feat.get("eia_crude_vs_5yr", 0) or feat.get("eia_natgas_vs_5yr", 0) or 0)
+        if direction == "UP"   and (eia_draw > 0 or eia_vs5yr < -0.5): confirming += 1
+        if direction == "DOWN" and eia_vs5yr > 0.5:                     confirming += 1
+        # Signal 4: USDA crop condition trend agrees (for grain/ag symbols)
+        crop_chg = float(feat.get("usda_crop_good_exc_chg", 0) or 0)
+        if direction == "DOWN" and crop_chg < -2:  confirming += 1
+        if direction == "UP"   and crop_chg >  2:  confirming += 1
+        # Upgrade if 2+ signals confirm; downgrade if none confirm
+        if confirming >= 2 and base == "MEDIUM":
+            return "HIGH"
+        if confirming == 0 and base == "MEDIUM":
+            return "LOW"
+        return base
 
     # Price range using ATR
     current_price, atr_pct = _get_current_price(symbol)
@@ -254,22 +287,33 @@ def predict(symbol: str, as_of_date: str = None) -> dict:
     # SHAP top signals
     top_signals = _get_shap_top5(bundle_7d["xgb"], X_scaled_7d, feat_names_7d, pred_class_7d)
 
+    conf_7d  = _confirmed_confidence(prob_7d,  direction_7d,  features_series)
+    conf_30d = _confirmed_confidence(prob_30d, direction_30d, features_series)
+
+    # Symbols where 7d model has known accuracy issues — surface a warning.
+    UNRELIABLE_7D = {"ZC=F", "HG=F"}
+    model_warning = (
+        "7d model accuracy is low for this symbol — use 30d forecast instead"
+        if symbol in UNRELIABLE_7D else None
+    )
+
     return {
         "symbol":           symbol,
         "commodity_name":   SYMBOL_NAMES.get(symbol, symbol),
         "as_of_date":       as_of,
         "current_price":    current_price,
         "forecast_7d": {
-            "direction":       direction_7d,
-            "probability":     round(prob_7d, 4),
-            "price_range_low": price_range_low,
-            "price_range_high":price_range_high,
-            "confidence":      _confidence(prob_7d),
+            "direction":        direction_7d,
+            "probability":      round(prob_7d, 4),
+            "price_range_low":  price_range_low,
+            "price_range_high": price_range_high,
+            "confidence":       conf_7d,
+            "model_warning":    model_warning,
         },
         "forecast_30d": {
             "direction":   direction_30d,
             "probability": round(prob_30d, 4),
-            "confidence":  _confidence(prob_30d),
+            "confidence":  conf_30d,
         },
         "top_signals": top_signals,
     }

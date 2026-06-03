@@ -54,6 +54,8 @@ ALL_MACRO_FEATURES = [
     "fred_indpro",
     "fred_fedfunds",
     "fred_yield_inv",
+    "fred_china_pmi",
+    "fred_copper_basis",
     "has_fred_data",
     # EIA
     "eia_crude_stocks",
@@ -70,6 +72,7 @@ ALL_MACRO_FEATURES = [
     "usda_crop_good_exc_chg",
     "usda_stocks",
     "usda_stocks_yoy",
+    "usda_production",
     "has_usda_data",
 ]
 
@@ -104,13 +107,25 @@ def _load_cot(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
 
 def _load_fred(start_date: str, end_date: str) -> pd.DataFrame:
     conn = get_conn()
-    df = conn.execute("""
-        SELECT date, dxy, inflation_exp, vix, treasury_10y,
-               financial_stress, indpro, fedfunds
-        FROM fred_data
-        WHERE date >= ? AND date <= ?
-        ORDER BY date
-    """, [start_date, end_date]).df()
+    # Try to select new columns; fall back gracefully if they don't exist yet
+    try:
+        df = conn.execute("""
+            SELECT date, dxy, inflation_exp, vix, treasury_10y,
+                   financial_stress, indpro, fedfunds, china_pmi, copper_basis
+            FROM fred_data
+            WHERE date >= ? AND date <= ?
+            ORDER BY date
+        """, [start_date, end_date]).df()
+    except Exception:
+        df = conn.execute("""
+            SELECT date, dxy, inflation_exp, vix, treasury_10y,
+                   financial_stress, indpro, fedfunds
+            FROM fred_data
+            WHERE date >= ? AND date <= ?
+            ORDER BY date
+        """, [start_date, end_date]).df()
+        df["china_pmi"]    = None
+        df["copper_basis"] = None
     conn.close()
     if df.empty:
         return pd.DataFrame()
@@ -138,6 +153,8 @@ def _load_fred(start_date: str, end_date: str) -> pd.DataFrame:
         "financial_stress": "fred_financial_stress",
         "indpro":           "fred_indpro",
         "fedfunds":         "fred_fedfunds",
+        "china_pmi":        "fred_china_pmi",
+        "copper_basis":     "fred_copper_basis",
     })
 
 
@@ -209,12 +226,21 @@ def _load_usda(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
         .sort_values("date")
     )
 
-    if not cond.empty and not stk.empty:
-        result = cond.merge(stk, on="date", how="outer")
-    elif not cond.empty:
-        result = cond
-    else:
-        result = stk
+    # Annual production (forward-filled across year)
+    prd = (
+        df[df["metric"].str.upper().str.contains("PRODUCTION", na=False)]
+        .groupby("date")
+        .agg(usda_production=("value", "mean"))
+        .reset_index()
+        .sort_values("date")
+    )
+
+    parts = [p for p in [cond, stk, prd] if not p.empty]
+    if not parts:
+        return pd.DataFrame()
+    result = parts[0]
+    for p in parts[1:]:
+        result = result.merge(p, on="date", how="outer")
 
     result["has_usda_data"] = 1
     return result.sort_values("date").reset_index(drop=True)
@@ -314,10 +340,19 @@ def get_macro_features(symbol: str, as_of_date: str = None) -> dict:
         })
 
     # ── FRED ─────────────────────────────────────────────────────────────────
-    fred_now  = conn.execute("""
-        SELECT dxy, inflation_exp, vix, treasury_10y, financial_stress, indpro, fedfunds
-        FROM fred_data WHERE date <= ? ORDER BY date DESC LIMIT 1
-    """, [target]).fetchone()
+    try:
+        fred_now = conn.execute("""
+            SELECT dxy, inflation_exp, vix, treasury_10y, financial_stress,
+                   indpro, fedfunds, china_pmi, copper_basis
+            FROM fred_data WHERE date <= ? ORDER BY date DESC LIMIT 1
+        """, [target]).fetchone()
+    except Exception:
+        fred_now = conn.execute("""
+            SELECT dxy, inflation_exp, vix, treasury_10y, financial_stress,
+                   indpro, fedfunds
+            FROM fred_data WHERE date <= ? ORDER BY date DESC LIMIT 1
+        """, [target]).fetchone()
+        fred_now = (fred_now + (None, None)) if fred_now else None
 
     week_ago = (datetime.strptime(target, "%Y-%m-%d").date() - timedelta(days=7)).isoformat()
     fred_wk   = conn.execute("""
@@ -350,6 +385,8 @@ def get_macro_features(symbol: str, as_of_date: str = None) -> dict:
             "fred_indpro":           fred_now[5] or 0,
             "fred_fedfunds":         ff,
             "fred_yield_inv":        float(t10y < ff),
+            "fred_china_pmi":        float(fred_now[7]) if fred_now[7] is not None else 0,
+            "fred_copper_basis":     float(fred_now[8]) if fred_now[8] is not None else 0,
             "has_fred_data":         1.0,
         })
 
@@ -398,6 +435,13 @@ def get_macro_features(symbol: str, as_of_date: str = None) -> dict:
                   AND (UPPER(metric) LIKE '%PCT GOOD%' OR UPPER(metric) LIKE '%PCT EXCELLENT%')
             """, [symbol, prev_date]).fetchone()
 
+            prod_row = conn.execute("""
+                SELECT value FROM usda_crop
+                WHERE commodity = ? AND UPPER(metric) LIKE '%PRODUCTION%'
+                  AND date <= ?
+                ORDER BY date DESC LIMIT 1
+            """, [symbol, target]).fetchone()
+
             crop_now  = float(cond_row[0])  if cond_row and cond_row[0]  else 0
             crop_prev = float(prev_cond[0]) if prev_cond and prev_cond[0] else crop_now
             result.update({
@@ -405,6 +449,7 @@ def get_macro_features(symbol: str, as_of_date: str = None) -> dict:
                 "usda_crop_good_exc_chg": crop_now - crop_prev,
                 "usda_stocks":            float(stk_row[0]) if stk_row and stk_row[0] else 0,
                 "usda_stocks_yoy":        float(stk_row[1]) if stk_row and stk_row[1] else 0,
+                "usda_production":        float(prod_row[0]) if prod_row and prod_row[0] else 0,
                 "has_usda_data":          1.0,
             })
 

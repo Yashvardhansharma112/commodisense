@@ -87,9 +87,15 @@ def _parse_and_store(raw: pd.DataFrame) -> int:
 
     raw.columns = raw.columns.str.strip()
 
-    # Accept alternate date column name
-    if "As_of_Date_In_Form_YYYY-MM-DD" not in raw.columns and ALT_DATE_COL in raw.columns:
-        raw = raw.rename(columns={ALT_DATE_COL: "As_of_Date_In_Form_YYYY-MM-DD"})
+    # Normalise date column — CFTC changed formats across years:
+    # Modern (2013+): As_of_Date_In_Form_YYYY-MM-DD
+    # Legacy (2010-2012): As_of_Date_In_Form_YYMMDD  or  Report_Date_as_MM_DD_YYYY
+    DATE_COL = "As_of_Date_In_Form_YYYY-MM-DD"
+    if DATE_COL not in raw.columns:
+        for fallback in [ALT_DATE_COL, "As_of_Date_In_Form_YYMMDD", "Report_Date_as_MM_DD_YYYY"]:
+            if fallback in raw.columns:
+                raw = raw.rename(columns={fallback: DATE_COL})
+                break
 
     missing = [c for c in REQUIRED_COLS if c not in raw.columns]
     if missing:
@@ -150,7 +156,8 @@ def run(backfill: bool = False) -> str:
     current_year = date.today().year
     total = 0
 
-    start_year = current_year - 4 if backfill else current_year
+    # CFTC disaggregated report starts 2009. Full history = more market cycles to learn from.
+    start_year = 2009 if backfill else current_year
     for year in range(start_year, current_year + 1):
         url = f"https://www.cftc.gov/files/dea/history/fut_disagg_txt_{year}.zip"
         raw = _fetch_zip(url)

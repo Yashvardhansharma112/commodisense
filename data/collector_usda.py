@@ -34,14 +34,23 @@ USDA_COMMODITY_MAP = {
     "CT=F": "COTTON",
 }
 
-# (statisticcat_desc, short_desc_contains)
 # (statisticcat_desc, short_desc_contains, date_type)
-# date_type: "weekly" uses week_ending field; "quarterly" constructs from year+reference_period_desc
+# date_type: "weekly" → week_ending; "quarterly" → year+reference_period_desc; "annual" → year-01-01
 USDA_QUERIES = [
-    ("CONDITION", "PCT GOOD",      "weekly"),
-    ("CONDITION", "PCT EXCELLENT", "weekly"),
-    ("STOCKS",    "GRAIN - STOCKS, MEASURED IN BU", "quarterly"),
+    ("CONDITION",  "PCT GOOD",                        "weekly"),
+    ("CONDITION",  "PCT EXCELLENT",                   "weekly"),
+    ("STOCKS",     "GRAIN - STOCKS, MEASURED IN BU",  "quarterly"),
+    ("PRODUCTION", "MEASURED IN BU",                  "annual"),   # annual crop yield (WASDE proxy)
 ]
+
+# USDA FAS PSD (no key needed) — global supply/demand for ending stocks-to-use ratio
+FAS_PSD_BASE = "https://apps.fas.usda.gov/psdonline/api/v1/data"
+FAS_COMMODITY_MAP = {
+    "ZC=F": "Corn",
+    "ZW=F": "Wheat",
+    "ZS=F": "Soybean Oil",  # closest FAS mapping for soybeans
+    "ZS_grain": "Soybeans",
+}
 
 _PERIOD_MONTH = {
     "FIRST OF JAN": "01", "FIRST OF MAR": "03", "FIRST OF JUN": "06",
@@ -90,6 +99,9 @@ def _fetch_usda(api_key: str, commodity: str, stat_cat: str,
 
         if date_type == "weekly":
             df["date"] = pd.to_datetime(df["week_ending"], errors="coerce").dt.date
+        elif date_type == "annual":
+            # Annual: use Jan 1 of the marketing year
+            df["date"] = pd.to_datetime(df["year"].astype(str) + "-01-01", errors="coerce").dt.date
         else:
             # Quarterly: construct from year + reference_period_desc
             df["date"] = df.apply(
