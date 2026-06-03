@@ -56,6 +56,8 @@ jobs:
       - name: Run daily pipeline
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          EIA_API_KEY:  ${{ secrets.EIA_API_KEY }}
+          USDA_API_KEY: ${{ secrets.USDA_API_KEY }}
         run: python pipeline/daily_run.py
 
       - name: Commit updated data
