@@ -1,6 +1,6 @@
 ---
 title: CommodiSense
-emoji: 📈
+emoji: chart_with_upwards_trend
 colorFrom: slate
 colorTo: slate
 sdk: docker
