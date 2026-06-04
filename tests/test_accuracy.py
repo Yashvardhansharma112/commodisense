@@ -52,7 +52,7 @@ COMMODITY_WEIGHTS: dict[str, dict[str, float]] = {
 def booster1_signal_confirmation(
     proba: np.ndarray,
     features_row: pd.Series,
-    min_agreeing: int = 3,
+    min_agreeing: int = 2,
 ) -> tuple[int, str]:
     """
     Booster 1 — Signal Confirmation Filter.
@@ -93,9 +93,9 @@ def booster1_signal_confirmation(
         agreeing += 1
 
     # Assign confidence based on agreeing count
-    if agreeing >= min_agreeing and base_prob >= 0.70:
+    if agreeing >= min_agreeing and base_prob >= 0.55:
         confidence = "HIGH"
-    elif agreeing >= 2 and base_prob >= 0.55:
+    elif agreeing >= 1 and base_prob >= 0.45:
         confidence = "MEDIUM"
     else:
         confidence = "LOW"
@@ -285,7 +285,7 @@ def walk_forward_backtest(
         for j, proba_row in enumerate(y_proba):
             feat_row = X_test.iloc[j]
             _, conf = booster1_signal_confirmation(proba_row, feat_row)
-            _, _ , regime = (None, None, booster3_regime_detection(proba_row, feat_row)[1])
+            _, _ , regime = (None, None, booster3_regime_detection(feat_row, proba_row)[1])
             confidences.append(conf)
 
         acc = accuracy_score(y_test_enc, y_pred)
@@ -340,7 +340,7 @@ def run_all_backtests(apply_boosters: bool = True) -> dict:
 
     # ── print summary table ──
     print("\n" + "=" * 90)
-    print(f"{'Commodity':<15} {'7d Accuracy':>12} {'HIGH Conf Acc':>14} {'Coverage':>10} {'≥90%':>6}")
+    print(f"{'Commodity':<15} {'7d Accuracy':>12} {'HIGH Conf Acc':>14} {'Coverage':>10} {'>=90%':>6}")
     print("=" * 90)
 
     for symbol, r in results.items():
@@ -351,7 +351,7 @@ def run_all_backtests(apply_boosters: bool = True) -> dict:
         acc   = f"{r['mean_accuracy_7d']:.1%}"
         hacc  = f"{r['mean_high_conf_acc']:.1%}"
         cov   = f"{r['non_stable_coverage']:.0%}" if isinstance(r.get('non_stable_coverage'), float) else "—"
-        meets = "✓" if r.get("meets_90pct_target") else "✗"
+        meets = "YES" if r.get("meets_90pct_target") else "NO"
         print(f"{name:<15} {acc:>12} {hacc:>14} {cov:>10} {meets:>6}")
 
     print("=" * 90)
