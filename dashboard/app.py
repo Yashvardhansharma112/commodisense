@@ -309,6 +309,71 @@ def _inject_css():
 def _ensure_schema():
     init_schema()
 
+@st.cache_resource
+def _ensure_prices():
+    """Keep prices up to date on every container start.
+    - If DB is empty: full 5-year backfill from yfinance.
+    - If DB has data but is stale (latest < yesterday): fetch missing days only.
+    Runs once per process lifetime."""
+    try:
+        import yfinance as yf
+        from datetime import date as _date, timedelta
+
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT COUNT(*), MAX(date) FROM prices"
+        ).fetchone()
+        conn.close()
+        count, latest_date = row[0], row[1]
+
+        yesterday = (_date.today() - timedelta(days=1)).isoformat()
+
+        # Nothing to do if already current
+        if count > 100 and latest_date and str(latest_date) >= yesterday:
+            return
+
+        # Full backfill for empty DB, incremental top-up otherwise
+        period = "5y" if count < 100 else None
+        start  = None if period else (str(latest_date) if latest_date else "2020-01-01")
+
+        symbols = list(SYMBOL_NAMES.keys())
+        kwargs = dict(auto_adjust=True, progress=False)
+        if period:
+            kwargs["period"] = period
+        else:
+            kwargs["start"] = start
+
+        ticker_data = yf.download(symbols, **kwargs)
+        if ticker_data.empty:
+            return
+
+        conn2 = get_conn()
+        for sym in symbols:
+            try:
+                df = ticker_data.xs(sym, axis=1, level=1) if len(symbols) > 1 else ticker_data.copy()
+                if df is None or df.empty:
+                    continue
+                df = df.reset_index()
+                df.columns = [c.lower() for c in df.columns]
+                for _, r in df.iterrows():
+                    try:
+                        conn2.execute(
+                            "INSERT OR REPLACE INTO prices "
+                            "(date,symbol,open,high,low,close,volume,adj_close) "
+                            "VALUES (?,?,?,?,?,?,?,?)",
+                            [str(r["date"])[:10], sym,
+                             float(r.get("open")  or 0), float(r.get("high")  or 0),
+                             float(r.get("low")   or 0), float(r.get("close") or 0),
+                             float(r.get("volume") or 0), float(r.get("close") or 0)]
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        conn2.close()
+    except Exception:
+        pass
+
 @st.cache_data(ttl=3600)
 def _load_forecast(symbol: str) -> dict:
     return predict(symbol)
@@ -1036,6 +1101,7 @@ def _render_sidebar() -> tuple[str, int]:
 
 def main():
     _ensure_schema()
+    _ensure_prices()
     _inject_css()
     _render_header()
 
