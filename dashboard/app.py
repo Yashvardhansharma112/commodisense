@@ -456,16 +456,47 @@ def _load_macro_env() -> dict:
                 "fedfunds": row[3], "stress": row[4], "copper_basis": row[5]}
     return {}
 
-@st.cache_data(ttl=3600)
-def _load_recent_news(symbol: str, limit: int = 15) -> pd.DataFrame:
-    conn = get_conn()
-    df = conn.execute(
-        "SELECT published_date, title, url, sentiment_score FROM news_raw "
-        "WHERE commodity_tags LIKE ? ORDER BY published_date DESC LIMIT ?",
-        [f"%{symbol}%", limit],
-    ).df()
-    conn.close()
-    return df
+@st.cache_data(ttl=1800)  # 30-min cache — live news
+def _load_recent_news(symbol: str, limit: int = 20) -> pd.DataFrame:
+    """Fetch live news from Yahoo Finance RSS, fall back to DB."""
+    rows = []
+    try:
+        import feedparser, urllib.parse
+        url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={urllib.parse.quote(symbol)}&region=US&lang=en-US"
+        feed = feedparser.parse(url)
+        for entry in feed.entries[:limit]:
+            pub = entry.get("published", "")
+            try:
+                from email.utils import parsedate_to_datetime
+                pub_dt = parsedate_to_datetime(pub).strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                pub_dt = pub[:16]
+            rows.append({
+                "published_date": pub_dt,
+                "title":          entry.get("title", ""),
+                "url":            entry.get("link", "#"),
+                "sentiment_score": 0.0,
+                "source":         "Yahoo Finance",
+            })
+    except Exception:
+        pass
+
+    # Fallback to DB if Yahoo RSS returned nothing
+    if not rows:
+        conn = get_conn()
+        db_df = conn.execute(
+            "SELECT published_date, title, url, sentiment_score FROM news_raw "
+            "WHERE commodity_tags LIKE ? ORDER BY published_date DESC LIMIT ?",
+            [f"%{symbol}%", limit],
+        ).df()
+        conn.close()
+        if not db_df.empty:
+            db_df["source"] = "GDELT"
+            return db_df
+
+    if rows:
+        return pd.DataFrame(rows)
+    return pd.DataFrame(columns=["published_date", "title", "url", "sentiment_score", "source"])
 
 @st.cache_data(ttl=3600)
 def _load_weather(symbol: str) -> dict:
@@ -1044,43 +1075,57 @@ def _render_deep_dive(symbol: str, days: int, horizon_key: str):
 # ── news feed ──────────────────────────────────────────────────────────────────
 
 def _render_news(symbol: str):
-    st.markdown(f"""
-    <div class="section-header" style="margin-top:8px;">
-      <div class="section-dot"></div>
-      <div class="section-title">Recent News — {SYMBOL_NAMES.get(symbol, symbol)}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    name = SYMBOL_NAMES.get(symbol, symbol)
+    df   = _load_recent_news(symbol)
+    source_label = df["source"].iloc[0] if not df.empty and "source" in df.columns else "GDELT"
+    live_badge = (
+        f'<span style="background:{C["up"]}22;color:{C["up"]};border-radius:4px;'
+        f'padding:2px 7px;font-size:0.6rem;font-weight:700;letter-spacing:0.06em;'
+        f'margin-left:8px;">LIVE</span>'
+        if source_label == "Yahoo Finance" else ""
+    )
 
-    df = _load_recent_news(symbol)
+    st.markdown(
+        f'<div class="section-header" style="margin-top:8px;">'
+        f'<div class="section-dot"></div>'
+        f'<div class="section-title">News — {name}{live_badge}</div>'
+        f'<div style="font-size:0.6rem;color:{C["text3"]};margin-left:auto;">'
+        f'{source_label}</div></div>',
+        unsafe_allow_html=True,
+    )
+
     if df.empty:
-        st.caption("No news data — run the news collector.")
+        st.caption("No news available for this commodity.")
         return
 
     for _, row in df.iterrows():
         score = float(row.get("sentiment_score") or 0)
+        has_score = abs(score) > 0.01
         scol  = C["up"] if score > 0.1 else (C["down"] if score < -0.1 else C["stable"])
         sign  = "+" if score > 0 else ""
-        title = str(row.get("title", ""))[:120]
+        title = str(row.get("title", ""))[:130]
         url   = str(row.get("url", "#"))
-        pub   = str(row.get("published_date", ""))[:10]
+        pub   = str(row.get("published_date", ""))[:16]
 
-        st.markdown(f"""
-        <div class="news-row">
-          <div style="min-width:80px;font-size:0.68rem;color:{C['text3']};
-                      font-family:'JetBrains Mono',monospace;padding-top:1px;">{pub}</div>
-          <div style="min-width:42px;text-align:center;">
-            <span style="background:{scol}22;color:{scol};border-radius:4px;
-                         padding:2px 6px;font-size:0.68rem;font-weight:600;
-                         font-family:'JetBrains Mono',monospace;">{sign}{score:.2f}</span>
-          </div>
-          <div style="flex:1;font-size:0.84rem;color:{C['text']};">
-            <a href="{url}" target="_blank"
-               style="color:{C['text']};text-decoration:none;"
-               onmouseover="this.style.color='{C['accent']}'"
-               onmouseout="this.style.color='{C['text']}'">{title}</a>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+        score_html = (
+            f'<span style="background:{scol}22;color:{scol};border-radius:4px;'
+            f'padding:2px 6px;font-size:0.68rem;font-weight:600;'
+            f'font-family:\'JetBrains Mono\',monospace;">{sign}{score:.2f}</span>'
+            if has_score else
+            f'<span style="color:{C["text3"]};font-size:0.68rem;">—</span>'
+        )
+        st.markdown(
+            f'<div class="news-row">'
+            f'<div style="min-width:90px;font-size:0.68rem;color:{C["text3"]};'
+            f'font-family:\'JetBrains Mono\',monospace;padding-top:1px;">{pub}</div>'
+            f'<div style="min-width:44px;text-align:center;">{score_html}</div>'
+            f'<div style="flex:1;font-size:0.84rem;color:{C["text"]};">'
+            f'<a href="{url}" target="_blank" style="color:{C["text"]};text-decoration:none;"'
+            f' onmouseover="this.style.color=\'{C["accent"]}\'"'
+            f' onmouseout="this.style.color=\'{C["text"]}\'">{title}</a>'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
 
 
 # ── sidebar controls ───────────────────────────────────────────────────────────
