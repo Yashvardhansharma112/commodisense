@@ -462,7 +462,10 @@ def _load_recent_news(symbol: str, limit: int = 20) -> pd.DataFrame:
     rows = []
     try:
         import feedparser, urllib.parse
-        url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={urllib.parse.quote(symbol)}&region=US&lang=en-US"
+        # Some tickers need remapping for Yahoo Finance RSS
+        _YF_RSS_MAP = {"USDINR=X": "INR=X"}
+        rss_ticker = _YF_RSS_MAP.get(symbol, symbol)
+        url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={urllib.parse.quote(rss_ticker)}&region=US&lang=en-US"
         feed = feedparser.parse(url)
         for entry in feed.entries[:limit]:
             pub = entry.get("published", "")
