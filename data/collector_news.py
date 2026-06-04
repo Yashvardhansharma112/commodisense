@@ -30,30 +30,41 @@ GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
 
 # Query terms per commodity — broader queries yield more articles
 COMMODITY_QUERIES: dict[str, str] = {
-    "CL=F":    "crude oil OR petroleum OR OPEC production",
-    "NG=F":    "natural gas LNG pipeline energy",
-    "GC=F":    "gold price OR fed rate OR dollar index inflation",
-    "ZW=F":    "wheat grain harvest Ukraine Russia export",
-    "ZC=F":    "corn maize crop yield USDA",
-    "ZS=F":    "soybeans soy crop Brazil harvest",
-    "CT=F":    "cotton textile crop India Pakistan",
-    "SB=F":    "sugar cane ethanol Brazil harvest",
-    "USDINR=X":"USD INR rupee India RBI forex",
-    "HG=F":    "copper mining Chile China demand",
+    "CL=F":    "crude oil petroleum OPEC production barrel brent WTI",
+    "NG=F":    "natural gas LNG pipeline energy storage Henry Hub",
+    "GC=F":    "gold price bullion federal reserve inflation treasury yield",
+    "ZW=F":    "wheat grain harvest Ukraine Russia Black Sea export flour",
+    "ZC=F":    "corn maize crop yield USDA ethanol feed grain",
+    "ZS=F":    "soybean soy crop Brazil Argentina harvest USDA crush",
+    "CT=F":    "cotton textile crop India Pakistan fiber apparel",
+    "SB=F":    "sugar cane ethanol Brazil harvest mill sweetener",
+    "USDINR=X":"USD INR rupee India RBI Reserve Bank forex currency",
+    "HG=F":    "copper mining Chile China demand LME industrial metal",
 }
 
-# Keywords for tag assignment — used for fast commodity_tags matching
+# Keywords for tag assignment — broader matching catches more articles
 COMMODITY_KEYWORDS: dict[str, list[str]] = {
-    "CL=F":    ["crude", "petroleum", "opec", "oil", "barrel", "brent", "wti"],
-    "NG=F":    ["natural gas", "lng", "pipeline", "gas price"],
-    "GC=F":    ["gold", "bullion", "fed rate", "inflation", "dollar"],
-    "ZW=F":    ["wheat", "grain", "flour", "ukraine wheat", "black sea"],
-    "ZC=F":    ["corn", "maize", "ethanol corn", "usda corn"],
-    "ZS=F":    ["soybean", "soy", "soya"],
-    "CT=F":    ["cotton", "textile", "fiber"],
-    "SB=F":    ["sugar", "cane", "sucrose"],
-    "USDINR=X":["rupee", "rbi", "inr", "usd inr"],
-    "HG=F":    ["copper", "hg futures", "copper mine"],
+    "CL=F":    ["crude", "petroleum", "opec", "oil price", "barrel", "brent", "wti",
+                "oil market", "oil supply", "energy price", "refinery"],
+    "NG=F":    ["natural gas", "lng", "pipeline", "gas price", "gas storage",
+                "henry hub", "gas supply", "gas demand", "gas inventory"],
+    "GC=F":    ["gold", "bullion", "gold price", "fed rate", "federal reserve",
+                "inflation", "treasury yield", "safe haven", "gold rally"],
+    "ZW=F":    ["wheat", "grain", "flour", "ukraine wheat", "black sea", "wheat price",
+                "grain export", "wheat supply", "winter wheat", "spring wheat"],
+    "ZC=F":    ["corn", "maize", "corn price", "corn crop", "ethanol", "usda corn",
+                "corn yield", "corn supply", "corn demand", "feed grain"],
+    "ZS=F":    ["soybean", "soy", "soya", "soy price", "soy crop", "soy crush",
+                "soybean meal", "soy oil", "brazil soy", "argentina soy"],
+    "CT=F":    ["cotton", "textile", "cotton price", "cotton crop", "fiber",
+                "cotton supply", "cotton demand", "apparel", "cotton india"],
+    "SB=F":    ["sugar", "cane", "sugar price", "ethanol", "sucrose", "sweetener",
+                "sugar crop", "brazil sugar", "sugar supply", "sugar demand"],
+    "USDINR=X":["rupee", "rbi", "inr", "usd inr", "india currency", "forex india",
+                "reserve bank india", "indian rupee", "usd/inr", "india rate"],
+    "HG=F":    ["copper", "copper price", "copper mine", "lme copper", "copper demand",
+                "copper supply", "chile copper", "china copper", "industrial metal",
+                "copper inventory", "copper futures"],
 }
 
 RSS_FEEDS = [

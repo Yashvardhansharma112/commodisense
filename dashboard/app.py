@@ -374,6 +374,31 @@ def _ensure_prices():
     except Exception:
         pass
 
+@st.cache_resource
+def _retag_news():
+    """Retag all news articles using the expanded keyword lists.
+    Fixes articles with empty tags and re-applies broader matching once per process."""
+    try:
+        from data.collector_news import COMMODITY_KEYWORDS
+        conn = get_conn()
+        rows = conn.execute(
+            "SELECT id, title, summary FROM news_raw"
+        ).fetchall()
+        updated = 0
+        for row_id, title, summary in rows:
+            text  = ((title or "") + " " + (summary or "")).lower()
+            tags  = [sym for sym, kws in COMMODITY_KEYWORDS.items()
+                     if any(k in text for k in kws)]
+            if tags:
+                conn.execute(
+                    "UPDATE news_raw SET commodity_tags = ? WHERE id = ?",
+                    [",".join(tags), row_id]
+                )
+                updated += 1
+        conn.close()
+    except Exception:
+        pass
+
 @st.cache_data(ttl=3600)
 def _load_forecast(symbol: str) -> dict:
     return predict(symbol)
@@ -1134,6 +1159,7 @@ def _render_sidebar() -> tuple[str, int]:
 def main():
     _ensure_schema()
     _ensure_prices()
+    _retag_news()
     _inject_css()
     _render_header()
 
