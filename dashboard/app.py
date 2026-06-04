@@ -980,43 +980,38 @@ def _render_deep_dive(symbol: str, days: int, horizon_key: str):
                 report = generate_report(fc)
 
         if report and isinstance(report, dict):
-            section_meta = [
-                ("outlook",     "Market Outlook",  C["accent"],  "◈"),
-                ("key_drivers", "Key Drivers",      C["up"],      "▲"),
-                ("risk",        "Primary Risk",     C["down"],    "⚠"),
-                ("trade_idea",  "Trade Idea",       C["gold"],    "◎"),
-            ]
-            sections_html = ""
-            for key, title, color, icon in section_meta:
+            # Header
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;'
+                f'padding-bottom:8px;border-bottom:1px solid {C["border"]};">'
+                f'<span style="font-size:1rem;">🤖</span>'
+                f'<span style="font-size:0.7rem;font-weight:700;letter-spacing:0.1em;'
+                f'text-transform:uppercase;color:{C["text2"]};">AI Analyst Report</span>'
+                f'<span style="font-size:0.6rem;color:{C["text3"]};margin-left:auto;">'
+                f'Powered by Llama 3.3 70B · Groq</span></div>',
+                unsafe_allow_html=True,
+            )
+            # One st.markdown per section — avoids nested HTML escaping
+            for key, title, color, icon in [
+                ("outlook",     "Market Outlook", C["accent"], "◈"),
+                ("key_drivers", "Key Drivers",    C["up"],     "▲"),
+                ("risk",        "Primary Risk",   C["down"],   "⚠"),
+                ("trade_idea",  "Trade Idea",     C["gold"],   "◎"),
+            ]:
                 text = report.get(key, "")
                 if not text:
                     continue
-                sections_html += f"""
-                <div style="margin-bottom:14px;padding:14px 18px;
-                            background:{C['surface2']};border-radius:10px;
-                            border-left:3px solid {color};">
-                  <div style="font-size:0.65rem;font-weight:700;letter-spacing:0.1em;
-                              text-transform:uppercase;color:{color};margin-bottom:6px;">
-                    {icon}&nbsp; {title}
-                  </div>
-                  <div style="font-size:0.88rem;color:{C['text']};line-height:1.65;">
-                    {text}
-                  </div>
-                </div>"""
-
-            st.markdown(f"""
-            <div style="margin-top:4px;">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;
-                          padding-bottom:8px;border-bottom:1px solid {C['border']};">
-                <span style="font-size:1rem;">🤖</span>
-                <span style="font-size:0.7rem;font-weight:700;letter-spacing:0.1em;
-                             text-transform:uppercase;color:{C['text2']};">AI Analyst Report</span>
-                <span style="font-size:0.6rem;color:{C['text3']};margin-left:auto;">
-                  Powered by Llama 3.3 70B · Groq
-                </span>
-              </div>
-              {sections_html}
-            </div>""", unsafe_allow_html=True)
+                st.markdown(
+                    f'<div style="margin-bottom:12px;padding:14px 18px;'
+                    f'background:{C["surface2"]};border-radius:10px;'
+                    f'border-left:3px solid {color};">'
+                    f'<div style="font-size:0.65rem;font-weight:700;letter-spacing:0.1em;'
+                    f'text-transform:uppercase;color:{color};margin-bottom:6px;">'
+                    f'{icon}&nbsp; {title}</div>'
+                    f'<div style="font-size:0.88rem;color:{C["text"]};line-height:1.65;">'
+                    f'{text}</div></div>',
+                    unsafe_allow_html=True,
+                )
         else:
             st.caption("AI report unavailable — set GROQ_API_KEY in your environment.")
 
