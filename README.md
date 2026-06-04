@@ -23,7 +23,7 @@ pinned: false
 Powered by XGBoost + LightGBM ensemble, SHAP explainability, FinBERT NLP sentiment,  
 CFTC COT positioning, EIA inventory data, USDA crop signals, and FRED macro indicators.
 
-[**Live Demo**](https://commodisense.streamlit.app) · [**Report Bug**](https://github.com/Yashvardhansharma112/commodisense/issues) · [**Request Feature**](https://github.com/Yashvardhansharma112/commodisense/issues)
+[**Live Demo**](https://huggingface.co/spaces/Yash1178/commodisense) · [**Report Bug**](https://github.com/Yashvardhansharma112/commodisense/issues) · [**Request Feature**](https://github.com/Yashvardhansharma112/commodisense/issues)
 
 </div>
 
@@ -69,8 +69,8 @@ Data Collection → Feature Engineering → Ensemble Training → Live Dashboard
 - **Dual horizons**: 7-day and 30-day directional forecasts
 - **3-class output**: UP (>threshold%), STABLE, DOWN (<-threshold%) with per-commodity calibrated thresholds
 - **Probability scores** with isotonic calibration for reliable confidence estimates
-- **HIGH / MEDIUM / LOW confidence tiers** based on model probability
-- **Signal confirmation filter**: 4 independent signals must agree to issue a HIGH-confidence call (price momentum, COT commercial positioning, EIA supply signal, USDA crop trend)
+- **HIGH / MEDIUM / LOW confidence tiers** — tuned via 3.5-year walk-forward backtest
+- **Signal confirmation filter**: probability ≥ 55% AND 2+ independent signals agree (momentum, COT, EIA, USDA) to issue HIGH confidence — fires ~9% of the time with **74% accuracy**
 
 ### Data Intelligence
 - **CFTC COT Reports**: 13 years of weekly institutional positioning (commercial hedgers vs managed money). The single most valuable commodity signal — smart money positioning often leads price by 1–3 weeks.
@@ -102,7 +102,7 @@ Data Collection → Feature Engineering → Ensemble Training → Live Dashboard
 ### Infrastructure
 - **GitHub Actions** daily pipeline (Mon–Fri 6am UTC): collect → process → retrain → forecast → commit
 - **DuckDB** embedded database (no server required, zero cost)
-- **Streamlit Cloud** free-tier hosting with auto-deploy on push
+- **Hugging Face Spaces** free-tier Docker hosting
 - Full **error isolation** — one failing step doesn't halt the rest of the pipeline
 
 ---
@@ -130,7 +130,7 @@ Data Collection → Feature Engineering → Ensemble Training → Live Dashboard
 
                              ↓ pushes to GitHub ↓
 
-                    Streamlit Cloud auto-deploys
+                  Hugging Face Space auto-rebuilds
 ```
 
 ---
@@ -227,44 +227,48 @@ Raw Features (65+)
 
 ## Accuracy Results
 
-> Measured on held-out test set (most recent 20% of data). Random chance = 33.3% (3-class problem).
+> Measured via **3.5-year walk-forward backtest** (train 18 months → test 1 month, rolling). Each symbol has 41 out-of-sample folds. Random chance = 33.3% (3-class problem).
 
-| Commodity | 7-Day | 30-Day | vs Baseline |
-|-----------|-------|--------|------------|
-| Crude Oil (CL=F) | 30.7% | 31.5% | +4.0% |
-| Natural Gas (NG=F) | 36.3% | 44.6% | +3.6% |
-| Gold (GC=F) | 37.1% | **54.2%** | +6.8% 30d |
-| Wheat (ZW=F) | **44.6%** | 23.1% | +0.4% 7d |
-| Corn (ZC=F) | 16.7%⚠ | **48.2%** | — |
-| **Soybeans (ZS=F)** | **62.2%** | 48.6% | **+18.0%** |
-| Cotton (CT=F) | **45.8%** | 34.7% | +0.8% |
-| Sugar (SB=F) | 35.9% | 36.7% | — |
-| USD/INR (USDINR=X) | 41.2% | **50.8%** | **+28.1%** 30d |
-| Copper (HG=F) | 16.3%⚠ | 23.1% | — |
-| **Average** | **36.7%** | **39.6%** | +5.4% vs random |
+### 7-Day Forecast Accuracy
 
-> ⚠ ZC=F 7d and HG=F have below-random accuracy due to structural market regime breaks in 2024–2026 (South American corn oversupply, HG=F name change in CFTC files limiting history). Use 30d forecasts for these symbols.
+| Commodity | Walk-Forward Acc | vs Random | HIGH Conf Acc | HIGH Conf Rate |
+|-----------|-----------------|-----------|---------------|----------------|
+| Crude Oil (CL=F) | 37.1% | +3.8% | **66.7%** | 19.5% |
+| Natural Gas (NG=F) | 39.7% | +6.4% | **82.3%** | 19.5% |
+| Gold (GC=F) | **51.9%** | +18.6% | — | — |
+| Wheat (ZW=F) | 37.3% | +4.0% | 56.9% | 14.6% |
+| Corn (ZC=F) | 48.8% | +15.5% | **100.0%** | 4.9% |
+| **Soybeans (ZS=F)** | 47.3% | +14.0% | **75.0%** | 9.8% |
+| Cotton (CT=F) | 47.4% | +14.1% | **100.0%** | 9.8% |
+| Sugar (SB=F) | 37.4% | +4.1% | 58.4% | 4.9% |
+| **USD/INR (USDINR=X)** | **59.7%** | **+26.4%** | 50.0% | 4.7% |
+| Copper (HG=F) | 43.7% | +10.4% | — | — |
+| **Average** | **45.1%** | **+11.8%** | **73.6%** | **8.7%** |
 
-**Best performers:**
-- 🥇 **ZS=F 7d: 62.2%** — USDA soybean crop condition is a dominant signal
-- 🥈 **USDINR=X 30d: 50.8%** — FRED DXY + Fed Funds rate highly predictive for USD/INR
-- 🥉 **GC=F 30d: 54.2%** — Gold responds strongly to yield curve and inflation expectations
+> **HIGH Confidence** fires when model probability ≥ 55% AND 2+ independent signals agree (momentum, COT, EIA, USDA). When it fires (~9% of calls), accuracy averages **73.6%** — vs 45.1% overall.
+
+**Key findings:**
+- Every symbol beats random chance (+3.8% to +26.4%)
+- **USDINR=X** is the strongest predictor at 59.7% — Fed Funds rate and DXY dominate
+- **Gold** at 51.9% — yield curve and inflation expectations are highly predictive
+- **Nat Gas HIGH confidence: 82.3%** — EIA inventory surprises drive very reliable calls
+- **Crude Oil HIGH confidence: 66.7%** at ~1-in-5 frequency — actionable signal
 
 ---
 
 ## Tech Stack
 
 ```
-Language        Python 3.10+
-Database        DuckDB 0.10+ (embedded, zero-config, serverless)
+Language        Python 3.11
+Database        DuckDB 1.x (embedded, zero-config, serverless)
 ML              XGBoost 2.0, LightGBM 4.0, scikit-learn 1.3
-Explainability  SHAP 0.42
+Explainability  SHAP (optional)
 NLP             HuggingFace Transformers (FinBERT), spaCy 3.5
 Dashboard       Streamlit 1.28, Plotly 5.15
 LLM Reports     Groq API (Llama 3)
 Data APIs       yfinance, requests, FRED CSV, EIA API v2, USDA NASS API
 Scheduling      GitHub Actions (cron)
-Hosting         Streamlit Cloud (free tier)
+Hosting         Hugging Face Spaces (Docker, free tier)
 ```
 
 ---
@@ -457,22 +461,23 @@ Different commodities have different volatility profiles. Thresholds are set in 
 
 ## Deployment
 
-### Streamlit Cloud (Recommended — Free)
+### Hugging Face Spaces (Recommended — Free)
 
 1. Fork or push to GitHub
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Click **New app** → connect your GitHub repo
-4. Set:
-   - **Repository**: `Yashvardhansharma112/commodisense`
-   - **Branch**: `main`
-   - **Main file path**: `dashboard/app.py`
-5. Click **Advanced settings** → paste in **Secrets** (TOML format):
-   ```toml
-   GROQ_API_KEY = "your_key"
-   EIA_API_KEY  = "your_key"
-   USDA_API_KEY = "your_key"
+2. Create a Space at [huggingface.co/new-space](https://huggingface.co/new-space) — choose **Docker** SDK
+3. Clone the Space repo locally and push the project files, or link via the HF CLI:
+   ```bash
+   pip install huggingface_hub
+   huggingface-cli login
    ```
-6. Click **Deploy**
+4. The `Dockerfile` exposes port 7860 and runs Streamlit — HF Spaces handles the rest
+5. Add secrets in **Settings → Variables and secrets**:
+   ```
+   GROQ_API_KEY   = your_key
+   EIA_API_KEY    = your_key
+   USDA_API_KEY   = your_key
+   ```
+6. On first startup, if the database is empty the app auto-fetches 5 years of price history from yfinance
 
 ### GitHub Actions (Daily Pipeline)
 
@@ -484,7 +489,7 @@ The pipeline runs automatically Mon–Fri at 06:00 UTC. It:
 2. Runs NLP sentiment + event extraction
 3. Generates new forecasts for all 10 symbols
 4. Commits the updated `data/commodisense.duckdb` back to the repo
-5. Streamlit Cloud auto-deploys on the new commit
+5. HF Space rebuilds automatically on the new commit
 
 ---
 
@@ -562,7 +567,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-Built with Python · Deployed on Streamlit Cloud · Data from CFTC, FRED, EIA, USDA, GDELT
+Built with Python · Deployed on Hugging Face Spaces · Data from CFTC, FRED, EIA, USDA, GDELT
 
 **[⭐ Star this repo](https://github.com/Yashvardhansharma112/commodisense)** if you find it useful
 
